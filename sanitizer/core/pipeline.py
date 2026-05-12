@@ -17,7 +17,7 @@ from typing import Optional
 
 from sanitizer.config import settings
 from sanitizer.core.types import SanitizeRequest, SanitizeResult
-from sanitizer.detectors.base import FaceDetector, TextDetector
+from sanitizer.detectors.base import FaceDetector, PersonDetector, TextDetector
 from sanitizer.detectors.face_ensemble import build_face_detector
 from sanitizer.detectors.ocr_paddle import build_ocr_detector
 from sanitizer.detectors.pii_text import PIITextAnalyzer
@@ -37,8 +37,10 @@ class SanitizerPipeline:
         self.ocr_langs = ocr_langs or settings.ocr_langs
         self._face_det: Optional[FaceDetector] = None
         self._text_det: Optional[TextDetector] = None
+        self._person_det: Optional[PersonDetector] = None
         self._pii: Optional[PIITextAnalyzer] = None
         self._retinaface = None  # cached for video (needs embeddings)
+        self._person_det_failed = False
 
     # ---- lazy detector accessors ----
     @property
@@ -60,6 +62,19 @@ class SanitizerPipeline:
         if self._pii is None:
             self._pii = PIITextAnalyzer(self.ocr_langs)
         return self._pii
+
+    @property
+    def person_det(self) -> Optional[PersonDetector]:
+        if self._person_det is None and not self._person_det_failed:
+            try:
+                from sanitizer.detectors.person_yolo import YoloPersonDetector
+
+                logger.info("Loading person detector (yolo person)\u2026")
+                self._person_det = YoloPersonDetector()
+            except Exception as e:
+                self._person_det_failed = True
+                logger.warning(f"Person detector unavailable; using face-to-body fallback: {e}")
+        return self._person_det
 
     @property
     def retinaface(self):
@@ -111,16 +126,19 @@ class SanitizerPipeline:
         if category == "video":
             from sanitizer.handlers.video import IdentityGallery, sanitize_video
             gallery = IdentityGallery()
+            face_detector_for_video = self.face_det
             if reference_faces:
+                # Reference-based identity matching needs embeddings from RetinaFace.
+                face_detector_for_video = self.retinaface
                 for ident_id, img_paths in reference_faces.items():
                     for ipath in img_paths:
-                        ok = gallery.enroll_from_image(ident_id, ipath, self.retinaface)
+                        ok = gallery.enroll_from_image(ident_id, ipath, face_detector_for_video)
                         if not ok:
                             logger.warning(f"Skipped enrollment for {ident_id} from {ipath}")
             return sanitize_video(
                 input_path, output_path,
-                self.retinaface, self.text_det, self.pii,
-                request, gallery=gallery,
+                face_detector_for_video, self.text_det, self.pii,
+                request, gallery=gallery, person_det=self.person_det,
             )
 
         raise ValueError(f"Unsupported file type for {input_path} (detected={category})")

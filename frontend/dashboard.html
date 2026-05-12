@@ -128,6 +128,23 @@
                         placeholder="e.g. NID-\d{8}, ACC\d{6}" />
                 </div>
 
+                <div class="opt-group" id="video-face-panel" hidden>
+                    <label class="opt-label">Video face selection</label>
+                    <div class="seg" role="radiogroup" aria-label="Video region mode" style="margin-bottom:10px;">
+                        <button type="button" class="seg__btn is-active" data-vregion="face_only">Face only</button>
+                        <button type="button" class="seg__btn" data-vregion="whole_body">Whole body</button>
+                        <button type="button" class="seg__btn" data-vregion="body_no_face">Body not face</button>
+                    </div>
+                    <p class="opt-hint">Choose whether to redact only the face, the full body area, or the body while preserving the face region.</p>
+                    <div class="seg" role="radiogroup" aria-label="Video face mode">
+                        <button type="button" class="seg__btn is-active" data-vmode="blur-selected">Blur selected</button>
+                        <button type="button" class="seg__btn" data-vmode="keep-selected">Keep selected</button>
+                    </div>
+                    <p class="opt-hint">Faces are detected from the first frame. Choose which tracked identities to blur or keep.</p>
+                    <div id="video-face-status" class="status" hidden></div>
+                    <div id="video-face-grid" class="folders-grid"></div>
+                </div>
+
                 <button id="run" class="btn btn--primary btn--block" disabled>Sanitize</button>
                 <div id="status" class="status" hidden></div>
             </article>
@@ -225,6 +242,6 @@
         </div>
     </footer>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260513"></script>
 </body>
 </html>

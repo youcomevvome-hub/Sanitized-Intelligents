@@ -15,6 +15,12 @@ class FaceDetector(ABC):
         ...
 
 
+class PersonDetector(ABC):
+    @abstractmethod
+    def detect(self, image: np.ndarray) -> List[Detection]:
+        ...
+
+
 class TextDetector(ABC):
     """Returns text regions with recognized strings as `label`."""
     @abstractmethod

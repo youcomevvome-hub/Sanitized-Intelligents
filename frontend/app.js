@@ -19,6 +19,10 @@
         bulkMaskMode: "blur",
         mosaicUrls: [],
         blurScope: "exact",  // "exact" = single char, "word" = all chars matching that char in words
+        videoFaces: [],
+        videoFaceMode: "blur-selected",
+        selectedVideoFaceIds: new Set(),
+        videoRedactionRegion: "face_only",
     };
 
     const IMAGE_EXT = ["jpg", "jpeg", "png", "tif", "tiff", "bmp", "webp"];
@@ -33,6 +37,57 @@
         if (ext === "pdf") return "pdf";
         if (ext === "docx") return "docx";
         return "unknown";
+    }
+
+    function xhrFormRequest(url, formData, { responseType = "blob", onProgress } = {}) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", url, true);
+
+            if (responseType === "blob") {
+                xhr.responseType = "blob";
+            }
+
+            xhr.upload.onprogress = (evt) => {
+                if (!onProgress || !evt.lengthComputable) return;
+                const pct = Math.max(0, Math.min(100, Math.round((evt.loaded / evt.total) * 100)));
+                onProgress(pct);
+            };
+
+            xhr.onerror = () => reject(new Error("Network error during upload."));
+            xhr.onabort = () => reject(new Error("Upload was cancelled."));
+
+            xhr.onload = () => {
+                const status = xhr.status || 0;
+                const ok = status >= 200 && status < 300;
+                const getHeader = (name) => xhr.getResponseHeader(name);
+
+                if (responseType === "json") {
+                    let parsed = null;
+                    try {
+                        parsed = JSON.parse(xhr.responseText || "null");
+                    } catch {
+                        parsed = null;
+                    }
+                    if (!ok) {
+                        const msg = (parsed && (parsed.detail || parsed.message)) || xhr.responseText || `HTTP ${status}`;
+                        reject(new Error(String(msg).slice(0, 220)));
+                        return;
+                    }
+                    resolve({ status, ok, data: parsed, getHeader });
+                    return;
+                }
+
+                if (!ok) {
+                    reject(new Error(`API error ${status}`));
+                    return;
+                }
+
+                resolve({ status, ok, data: xhr.response, getHeader });
+            };
+
+            xhr.send(formData);
+        });
     }
 
     async function checkHealth() {
@@ -136,6 +191,80 @@
             if (el) el.hidden = true;
         }
 
+        function setVideoFaceStatus(msg, { busy = false, error = false } = {}) {
+            const el = $("#video-face-status");
+            if (!el) return;
+            if (!msg) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.textContent = msg;
+            el.classList.toggle("is-busy", busy);
+            el.classList.toggle("is-error", error);
+        }
+
+        function renderVideoFaceGrid() {
+            const panel = $("#video-face-panel");
+            const grid = $("#video-face-grid");
+            if (!panel || !grid) return;
+
+            if (state.category !== "video") {
+                panel.hidden = true;
+                grid.innerHTML = "";
+                return;
+            }
+            panel.hidden = false;
+
+            if (!state.videoFaces.length) {
+                grid.innerHTML = '<div class="empty-state">No faces detected in first frame.</div>';
+                return;
+            }
+
+            grid.innerHTML = state.videoFaces.map((f) => {
+                const checked = state.selectedVideoFaceIds.has(f.id) ? "checked" : "";
+                return `
+                <label class="folder-card" style="cursor:pointer;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <input type="checkbox" data-face-id="${f.id}" ${checked} />
+                        <strong>${f.id}</strong>
+                    </div>
+                    <div style="margin-top:10px; border-radius:10px; overflow:hidden; background:#111; min-height:80px; display:flex; align-items:center; justify-content:center;">
+                        ${f.thumbnail ? `<img src="data:image/jpeg;base64,${f.thumbnail}" alt="${f.id}" style="width:100%; height:auto; object-fit:cover;" />` : `<span style="color:#fff; font-size:12px;">No preview</span>`}
+                    </div>
+                </label>`;
+            }).join("");
+
+            grid.querySelectorAll("input[data-face-id]").forEach((cb) => {
+                cb.addEventListener("change", (e) => {
+                    const id = e.target.getAttribute("data-face-id");
+                    if (e.target.checked) state.selectedVideoFaceIds.add(id);
+                    else state.selectedVideoFaceIds.delete(id);
+                });
+            });
+        }
+
+        async function detectVideoFaces(file) {
+            state.videoFaces = [];
+            state.selectedVideoFaceIds = new Set();
+            renderVideoFaceGrid();
+            setVideoFaceStatus("Detecting faces in first frame...", { busy: true });
+
+            try {
+                const form = new FormData();
+                form.append("file", file);
+                const r = await fetch("/sanitize/video/faces", { method: "POST", body: form });
+                if (!r.ok) throw new Error(`Face preview failed (${r.status})`);
+                const payload = await r.json();
+                state.videoFaces = payload.faces || [];
+                state.selectedVideoFaceIds = new Set(state.videoFaces.map((f) => f.id));
+                renderVideoFaceGrid();
+                setVideoFaceStatus(state.videoFaces.length ? `Detected ${state.videoFaces.length} face(s).` : "No faces detected.");
+            } catch (e) {
+                setVideoFaceStatus(e.message || "Face preview failed.", { error: true });
+            }
+        }
+
         function setFile(file) {
             if (!file) return;
             state.file = file;
@@ -150,6 +279,14 @@
                 meta.hidden = false;
                 name.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
             }
+            if (state.category === "video") {
+                detectVideoFaces(file);
+            } else {
+                state.videoFaces = [];
+                state.selectedVideoFaceIds = new Set();
+                renderVideoFaceGrid();
+                setVideoFaceStatus("");
+            }
             runBtn.disabled = false;
             clearStatus();
         }
@@ -162,6 +299,10 @@
             fi.value = "";
             const meta = $("#file-meta");
             if (meta) meta.hidden = true;
+            state.videoFaces = [];
+            state.selectedVideoFaceIds = new Set();
+            renderVideoFaceGrid();
+            setVideoFaceStatus("");
             runBtn.disabled = true;
         }
 
@@ -169,6 +310,13 @@
             const kernel = $("#kernel");
             const keywordsEl = $("#keywords");
             const patternsEl = $("#patterns");
+            let whitelistIds = [];
+            let blacklistIds = [];
+            if (state.category === "video" && state.videoFaces.length) {
+                const selected = Array.from(state.selectedVideoFaceIds);
+                if (state.videoFaceMode === "keep-selected") whitelistIds = selected;
+                else blacklistIds = selected;
+            }
             return {
                 mask_mode: state.maskMode,
                 blur_kernel: kernel ? parseInt(kernel.value, 10) : 51,
@@ -178,6 +326,9 @@
                 keywords: keywordsEl ? keywordsEl.value.split(",").map((s) => s.trim()).filter(Boolean) : [],
                 custom_patterns: patternsEl ? patternsEl.value.split(",").map((s) => s.trim()).filter(Boolean) : [],
                 blur_scope: state.blurScope || "exact",
+                whitelist_face_ids: whitelistIds,
+                blacklist_face_ids: blacklistIds,
+                video_redaction_region: state.videoRedactionRegion || "face_only",
             };
         }
 
@@ -355,16 +506,16 @@
             form.append("options", JSON.stringify(buildOptions()));
 
             runBtn.disabled = true;
-            setStatus("Sanitizing... this may take a moment on first run.", { busy: true });
+            setStatus("Uploading... 0%", { busy: true });
             try {
-                const res = await fetch(endpoint, { method: "POST", body: form });
-                if (!res.ok) {
-                    const errText = await res.text().catch(() => "");
-                    throw new Error(`API error ${res.status}: ${errText.slice(0, 200)}`);
-                }
-                const summaryHeader = res.headers.get("X-Sanitizer-Summary");
+                const res = await xhrFormRequest(endpoint, form, {
+                    responseType: "blob",
+                    onProgress: (pct) => setStatus(`Uploading... ${pct}%`, { busy: true }),
+                });
+                setStatus("Processing uploaded file...", { busy: true });
+                const summaryHeader = res.getHeader("X-Sanitizer-Summary");
                 const summary = summaryHeader ? JSON.parse(summaryHeader) : null;
-                const blob = await res.blob();
+                const blob = res.data;
                 await handleResult(blob, summary);
                 setStatus("Done. Compare the result below.");
             } catch (e) {
@@ -374,8 +525,14 @@
             }
         }
 
-        dz.addEventListener("click", () => fi.click());
-        fi.addEventListener("change", (e) => setFile(e.target.files[0]));
+        // Keep native <label> click behavior for broad mobile compatibility.
+        fi.addEventListener("click", () => {
+            fi.value = "";
+        });
+        fi.addEventListener("change", (e) => {
+            const f = e.target && e.target.files ? e.target.files[0] : null;
+            if (f) setFile(f);
+        });
         ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("is-drag"); }));
         ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("is-drag"); }));
         dz.addEventListener("drop", (e) => {
@@ -396,6 +553,14 @@
                     document.querySelectorAll(".seg__btn[data-scope]").forEach((x) => x.classList.remove("is-active"));
                     b.classList.add("is-active");
                     state.blurScope = b.dataset.scope;
+                } else if (b.dataset.vmode !== undefined) {
+                    document.querySelectorAll(".seg__btn[data-vmode]").forEach((x) => x.classList.remove("is-active"));
+                    b.classList.add("is-active");
+                    state.videoFaceMode = b.dataset.vmode;
+                } else if (b.dataset.vregion !== undefined) {
+                    document.querySelectorAll(".seg__btn[data-vregion]").forEach((x) => x.classList.remove("is-active"));
+                    b.classList.add("is-active");
+                    state.videoRedactionRegion = b.dataset.vregion;
                 }
             });
         });
@@ -871,11 +1036,13 @@
 
             const btn = $("#lib-save-btn");
             if (btn) btn.disabled = true;
-            setStatus("#lib-save-status", "Saving to library...", { busy: true });
+            setStatus("#lib-save-status", "Uploading... 0%", { busy: true });
             try {
-                const r = await fetch("/library/save", { method: "POST", body: form });
-                if (!r.ok) throw new Error(`Save failed (${r.status})`);
-                const payload = await r.json();
+                const r = await xhrFormRequest("/library/save", form, {
+                    responseType: "json",
+                    onProgress: (pct) => setStatus("#lib-save-status", `Uploading... ${pct}%`, { busy: true }),
+                });
+                const payload = r.data;
                 setStatus("#lib-save-status", `Saved ${payload.item.display_name} in folder ${payload.folder}.`);
                 loadFolders();
                 openFolder(payload.folder);
@@ -955,8 +1122,14 @@
         // Dropzone
         if (dz) {
             const fi = $("#lib-file");
-            dz.addEventListener("click", () => fi && fi.click());
-            if (fi) fi.addEventListener("change", (e) => setLibFile(e.target.files[0]));
+            // Keep native <label> behavior; just reset value so reselecting same file works.
+            if (fi) fi.addEventListener("click", () => { fi.value = ""; });
+            if (fi) {
+                fi.addEventListener("change", (e) => {
+                    const f = e.target && e.target.files ? e.target.files[0] : null;
+                    if (f) setLibFile(f);
+                });
+            }
             ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("is-drag"); }));
             ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("is-drag"); }));
             dz.addEventListener("drop", (e) => {

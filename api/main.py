@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+import base64
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -106,6 +107,7 @@ def _options_to_request(opts: SanitizeOptions) -> SanitizeRequest:
         blacklist_face_ids=opts.blacklist_face_ids,
         ocr_langs=opts.ocr_langs,
         blur_scope=(opts.blur_scope or "exact").lower(),
+        video_redaction_region=(opts.video_redaction_region or "face_only").lower(),
     )
 
 
@@ -162,6 +164,13 @@ def _extract_search_text(path: Path, category: str, pipe: SanitizerPipeline) -> 
 
 def _tokenize(text: str) -> List[str]:
     return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+
+
+def _parse_options_json(options: str) -> SanitizeOptions:
+    try:
+        return SanitizeOptions.model_validate_json(options)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid options JSON: {e}")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -225,7 +234,7 @@ async def sanitize_info(
 ):
     """Sanitize and return only the JSON detection summary (file written to a temp path)."""
     _check_size(file)
-    opts = SanitizeOptions.model_validate_json(options)
+    opts = _parse_options_json(options)
     request = _options_to_request(opts)
 
     workdir = Path(tempfile.mkdtemp(prefix="sanitize_"))
@@ -262,7 +271,7 @@ async def sanitize_video_endpoint(
     identity_id. Use those ids in `options.whitelist_face_ids` /
     `options.blacklist_face_ids`."""
     _check_size(file)
-    opts = SanitizeOptions.model_validate_json(options)
+    opts = _parse_options_json(options)
     request = _options_to_request(opts)
 
     workdir = Path(tempfile.mkdtemp(prefix="sanitize_video_"))
@@ -290,6 +299,62 @@ async def sanitize_video_endpoint(
         filename=f"sanitized_{file.filename}",
         headers={"X-Sanitizer-Summary": json.dumps(result.summary())},
     )
+
+
+@app.post("/sanitize/video/faces", response_class=JSONResponse)
+async def preview_video_faces(
+    file: UploadFile = File(..., description="Video file for face preview"),
+):
+    """Detect candidate faces from the first frames and return thumbnail previews.
+
+    IDs (`face_1`, `face_2`, ...) are deterministic for the preview ordering and
+    can be used with `whitelist_face_ids` / `blacklist_face_ids` in `/sanitize/video`.
+    """
+    _check_size(file)
+    workdir = Path(tempfile.mkdtemp(prefix="sanitize_video_preview_"))
+    src = workdir / (file.filename or f"video_{uuid.uuid4().hex}.mp4")
+    _save_upload(file, src)
+
+    import cv2
+
+    cap = cv2.VideoCapture(str(src))
+    if not cap.isOpened():
+        raise HTTPException(400, "Cannot open video")
+
+    detector = get_pipeline().face_det
+    faces_payload: list[dict[str, Any]] = []
+
+    try:
+        for _ in range(20):
+            ok, frame = cap.read()
+            if not ok:
+                break
+            detections = detector.detect(frame)
+            detections.sort(key=lambda d: (d.bbox[0], d.bbox[1]))
+            if not detections:
+                continue
+
+            for idx, d in enumerate(detections, start=1):
+                x1, y1, x2, y2 = d.bbox
+                x1 = max(0, min(frame.shape[1] - 1, x1))
+                y1 = max(0, min(frame.shape[0] - 1, y1))
+                x2 = max(x1 + 1, min(frame.shape[1], x2))
+                y2 = max(y1 + 1, min(frame.shape[0], y2))
+                crop = frame[y1:y2, x1:x2]
+                ok_enc, buf = cv2.imencode(".jpg", crop)
+                thumb = base64.b64encode(buf.tobytes()).decode("ascii") if ok_enc else ""
+                faces_payload.append(
+                    {
+                        "id": f"face_{idx}",
+                        "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                        "thumbnail": thumb,
+                    }
+                )
+            break
+    finally:
+        cap.release()
+
+    return JSONResponse({"faces": faces_payload})
 
 
 @app.post("/sanitize/search", response_class=JSONResponse)

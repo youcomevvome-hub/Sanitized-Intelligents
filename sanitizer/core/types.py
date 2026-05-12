@@ -58,6 +58,11 @@ class SanitizeRequest:
     # word     -> mask the whole word containing the match
     # sentence -> mask the whole OCR text region ("sentence" / line)
     blur_scope: str = "exact"
+    # Video region mode for face redaction:
+    #   face_only      -> mask only detected face box
+    #   whole_body     -> mask an expanded body region around the face track
+    #   body_no_face   -> mask expanded body region but preserve the face box
+    video_redaction_region: str = "face_only"
 
 
 @dataclass

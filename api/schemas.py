@@ -18,6 +18,10 @@ class SanitizeOptions(BaseModel):
     blacklist_face_ids: List[str] = Field(default_factory=list)
     ocr_langs: Optional[List[str]] = None
     blur_scope: str = Field("exact", description="exact | word | sentence")
+    video_redaction_region: str = Field(
+        "face_only",
+        description="face_only | whole_body | body_no_face",
+    )
 
 
 class SanitizeResponse(BaseModel):

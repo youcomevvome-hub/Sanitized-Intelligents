@@ -40,6 +40,7 @@ class Settings:
 
     # Thresholds
     face_conf: float = 0.35
+    person_conf: float = field(default_factory=lambda: float(_env("SANITIZER_PERSON_CONF", "0.25")))
     ocr_conf: float = 0.30
 
     # API
