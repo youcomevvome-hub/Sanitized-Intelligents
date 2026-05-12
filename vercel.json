@@ -1,0 +1,15 @@
+{
+  "installCommand": "pip install -r requirements-vercel.txt",
+  "functions": {
+    "api/main.py": {
+      "runtime": "python3.11",
+      "maxDuration": 60
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/main.py"
+    }
+  ]
+}
