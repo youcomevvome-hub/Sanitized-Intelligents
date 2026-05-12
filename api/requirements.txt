@@ -1,0 +1,5 @@
+fastapi>=0.110.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+filetype>=1.2.0
+loguru>=0.7.2
