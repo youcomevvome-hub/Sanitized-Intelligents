@@ -51,9 +51,12 @@ app.add_middleware(
 )
 
 # Persistent document library (Alfresco-style).
-from api.library import router as library_router  # noqa: E402
+try:
+    from api.library import router as library_router  # noqa: E402
 
-app.include_router(library_router)
+    app.include_router(library_router)
+except Exception as e:
+    logger.warning(f"Library routes disabled at startup: {e}")
 
 # Mount the static frontend if present.
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
