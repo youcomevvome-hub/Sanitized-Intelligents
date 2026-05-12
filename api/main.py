@@ -17,21 +17,23 @@ import tempfile
 import uuid
 import zipfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
-import cv2
-import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.schemas import HealthResponse, SanitizeOptions, SanitizeResponse
-from sanitizer import SanitizerPipeline, SanitizeRequest, __version__
 from sanitizer.config import settings
-from sanitizer.core.types import MaskMode
+from sanitizer.core.types import MaskMode, SanitizeRequest
 from sanitizer.utils import logger
 from sanitizer.utils.io import detect_category
+
+try:
+    from sanitizer import __version__
+except Exception:
+    __version__ = "0.1.0"
 
 app = FastAPI(
     title="Sanitizer API",
@@ -71,12 +73,15 @@ if _FRONTEND_DIR.exists():
         return FileResponse(_FRONTEND_DIR / page_file)
 
 # Singleton pipeline (loaded lazily on first request)
-_pipeline: Optional[SanitizerPipeline] = None
+_pipeline: Optional[Any] = None
 
 
-def get_pipeline() -> SanitizerPipeline:
+def get_pipeline() -> Any:
     global _pipeline
     if _pipeline is None:
+        # Delay heavy ML imports until needed so serverless startup stays healthy.
+        from sanitizer.core.pipeline import SanitizerPipeline
+
         _pipeline = SanitizerPipeline()
     return _pipeline
 
@@ -113,7 +118,10 @@ def _save_upload(upload: UploadFile, dest: Path) -> None:
         shutil.copyfileobj(upload.file, f)
 
 
-def _read_image(path: Path) -> np.ndarray:
+def _read_image(path: Path) -> Any:
+    import cv2
+    import numpy as np
+
     image = cv2.imread(str(path))
     if image is not None:
         return image
