@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
+import tempfile
 
 
 def _env(key: str, default: str) -> str:
@@ -47,7 +48,12 @@ class Settings:
     max_upload_mb: int = field(default_factory=lambda: int(_env("SANITIZER_MAX_UPLOAD_MB", "200")))
 
     def __post_init__(self) -> None:
-        self.model_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.model_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # Serverless platforms often mount app code as read-only.
+            self.model_dir = Path(tempfile.gettempdir()) / "sanitize-models"
+            self.model_dir.mkdir(parents=True, exist_ok=True)
         if self.blur_kernel % 2 == 0:
             self.blur_kernel += 1
 
