@@ -1,0 +1,4 @@
+# GPU overrides — install AFTER requirements.txt
+# pip install -r requirements.txt -r requirements-gpu.txt --upgrade
+onnxruntime-gpu>=1.17.0
+paddlepaddle-gpu>=2.6.0

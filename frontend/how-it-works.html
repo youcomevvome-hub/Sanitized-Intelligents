@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>How It Works - Sanitizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="page-how">
+    <header class="nav">
+        <div class="nav__inner">
+            <a class="nav__brand" href="/">
+                <img class="logo-mark" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                <span class="logo-text">Sanitizer</span>
+            </a>
+            <nav class="nav__links">
+                <a href="/">Home</a>
+                <a href="/?page=dashboard">Sanitize</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+                <a href="/?page=api-docs">API Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="section section--hero-dashboard">
+        <div class="container">
+            <h1 class="page-title">How It Works</h1>
+            <p class="page-subtitle">Understand the full flow for Sanitization and Document Intelligence.</p>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <header class="section__head">
+                <h2 class="section__title">Sanitization pipeline</h2>
+                <p class="section__sub">End-to-end anonymization for images, PDFs, docs, and text.</p>
+            </header>
+            <div class="how-grid">
+                <article class="card how-card">
+                    <div class="icon3d icon3d--upload"></div>
+                    <h3>1. Ingest</h3>
+                    <p>Upload file to the sanitization workspace with configurable rules.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--scan"></div>
+                    <h3>2. Detect</h3>
+                    <p>OCR + PII + face detection run in ensemble mode for stronger recall.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--mask"></div>
+                    <h3>3. Transform</h3>
+                    <p>Apply blur, pixelate, or blackbox only where needed.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--export"></div>
+                    <h3>4. Export</h3>
+                    <p>Download sanitized results with summary statistics in headers.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section--alt">
+        <div class="container">
+            <header class="section__head">
+                <h2 class="section__title">Intelligence pipeline</h2>
+                <p class="section__sub">Folder-based search and bulk transformations at scale.</p>
+            </header>
+            <div class="how-grid">
+                <article class="card how-card">
+                    <div class="icon3d icon3d--folder"></div>
+                    <h3>1. Group</h3>
+                    <p>Create named folders and organize mixed file types in one workspace.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--search"></div>
+                    <h3>2. Search</h3>
+                    <p>Search by text, number, image OCR cues, or signature terms.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--batch"></div>
+                    <h3>3. Select Similar</h3>
+                    <p>Choose selected items, all files, or similar file types for batch jobs.</p>
+                </article>
+                <article class="card how-card">
+                    <div class="icon3d icon3d--zip"></div>
+                    <h3>4. Bulk Export</h3>
+                    <p>Run transformation and download grouped ZIP outputs with summary.json.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__col footer__col--brand">
+                <a class="nav__brand" href="/">
+                    <img class="logo-mark logo-mark--light" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                    <span class="logo-text">Sanitizer</span>
+                </a>
+                <p class="footer__tag">Built for trusted, scalable privacy operations.</p>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Pages</h4>
+                <a href="/?page=dashboard">Sanitize</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=api-docs">API Docs</a>
+            </div>
+        </div>
+    </footer>
+    <script>
+        function navigate(page) {
+            window.location.href = `/?page=${page}`;
+        }
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

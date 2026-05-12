@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Models / data (downloaded at runtime)
+models/
+data/
+*.pt
+*.onnx
+*.pdmodel
+*.pdiparams
+
+# IDE
+.vscode/
+.idea/
+
+# Outputs
+outputs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sanitizer"
+version = "0.1.0"
+description = "Backend-agnostic PII anonymization engine (faces, IDs, numbers, names) for images, PDFs, DOCX, video and text."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "MIT" }
+
+[tool.setuptools.packages.find]
+include = ["sanitizer*", "api*"]

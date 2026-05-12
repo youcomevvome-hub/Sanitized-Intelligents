@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Intelligence — Sanitizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="page-intel">
+    <header class="nav">
+        <div class="nav__inner">
+            <a class="nav__brand" href="/">
+                <img class="logo-mark" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                <span class="logo-text">Sanitizer</span>
+            </a>
+            <nav class="nav__links">
+                <a href="/">Home</a>
+                <a href="/?page=dashboard">Sanitize</a>
+                <a class="is-current" href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+                <a href="/?page=api-docs">API Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="section section--intel-hero">
+        <div class="container intel-hero">
+            <div class="intel-hero__copy">
+                <span class="eyebrow">Document Intelligence Suite</span>
+                <h1 class="page-title">A secure workspace for sanitized files.</h1>
+                <p class="page-subtitle">Upload images, PDFs, Word and text files into named folders. Search by text, word, character, ID, image or signature. Save with custom names, sort, tag and export.</p>
+                <div class="intel-hero__actions">
+                    <a class="btn btn--primary" href="#upload">Add to library</a>
+                    <a class="btn btn--ghost" href="#search">Search library</a>
+                </div>
+            </div>
+            <aside class="intel-hero__art" aria-hidden="true">
+                <div class="intel-art">
+                    <div class="intel-art__row">
+                        <div class="intel-tile intel-tile--doc">DOC</div>
+                        <div class="intel-tile intel-tile--pdf">PDF</div>
+                        <div class="intel-tile intel-tile--img">IMG</div>
+                    </div>
+                    <div class="intel-art__row intel-art__row--offset">
+                        <div class="intel-tile intel-tile--sig">SIG</div>
+                        <div class="intel-tile intel-tile--id">ID</div>
+                        <div class="intel-tile intel-tile--txt">TXT</div>
+                    </div>
+                    <div class="intel-art__pulse"></div>
+                </div>
+            </aside>
+        </div>
+    </section>
+
+    <section class="section section--alt" id="library">
+        <div class="container">
+            <div class="section-head">
+                <div>
+                    <h2 class="section-title">Library</h2>
+                    <p class="section-sub">Persistent storage. Files saved here survive restarts.</p>
+                </div>
+                <div class="section-actions">
+                    <input id="new-folder-name" class="text-input text-input--inline" placeholder="New folder name" />
+                    <button id="create-folder-btn" class="btn btn--ghost" type="button">Create folder</button>
+                    <button id="refresh-library" class="btn btn--ghost" type="button">Refresh</button>
+                </div>
+            </div>
+            <div id="folders-grid" class="folders-grid"></div>
+        </div>
+    </section>
+
+    <section class="section" id="upload">
+        <div class="container grid grid--upload">
+            <article class="card card--drop">
+                <header class="card__head">
+                    <h2 class="card__title">Add to library</h2>
+                    <p class="card__sub">Image, PDF, DOCX, Word, text — drop, click or paste.</p>
+                </header>
+                <label class="dropzone" id="lib-dropzone">
+                    <input type="file" id="lib-file" hidden accept=".jpg,.jpeg,.png,.tif,.tiff,.bmp,.webp,.pdf,.doc,.docx,.txt,.csv,.md,.json" />
+                    <div class="dropzone__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                    </div>
+                    <div class="dropzone__title">Drop or click to browse</div>
+                    <div class="dropzone__hint">Or paste with Ctrl+V</div>
+                </label>
+                <div class="file-meta" id="lib-file-meta" hidden>
+                    <div class="file-meta__name" id="lib-file-meta-name"></div>
+                </div>
+            </article>
+
+            <article class="card card--options">
+                <header class="card__head">
+                    <h2 class="card__title">Save details</h2>
+                    <p class="card__sub">Give the document a name, folder, and tags.</p>
+                </header>
+                <div class="opt-group">
+                    <label class="opt-label" for="save-folder">Folder</label>
+                    <input id="save-folder" class="text-input" placeholder="e.g. contracts_q1" value="default" />
+                </div>
+                <div class="opt-group">
+                    <label class="opt-label" for="save-name">Save as</label>
+                    <input id="save-name" class="text-input" placeholder="e.g. acme_invoice_april" />
+                </div>
+                <div class="opt-group">
+                    <label class="opt-label" for="save-tags">Tags (comma separated)</label>
+                    <input id="save-tags" class="text-input" placeholder="invoice, finance, pii" />
+                </div>
+                <button id="lib-save-btn" class="btn btn--primary btn--block" type="button">Save to library</button>
+                <div id="lib-save-status" class="status" hidden></div>
+            </article>
+        </div>
+    </section>
+
+    <section class="section section--alt" id="search">
+        <div class="container">
+            <div class="card card--search">
+                <header class="card__head">
+                    <h2 class="card__title">Search the library</h2>
+                    <p class="card__sub">Search by text, exact word, character substring, ID/number, image similarity, or signature presence.</p>
+                </header>
+                <div class="search-bar">
+                    <select id="lib-search-mode" class="text-input">
+                        <option value="text">Text contains</option>
+                        <option value="word">Whole word</option>
+                        <option value="character">Character / substring</option>
+                        <option value="id">ID / number</option>
+                        <option value="image">Image similarity</option>
+                        <option value="signature">Signature present</option>
+                    </select>
+                    <input id="lib-search-folder" class="text-input" placeholder="folder (empty = all)" />
+                    <input id="lib-search-query" class="text-input text-input--grow" placeholder="Type a query..." />
+                    <label class="btn btn--ghost btn--file">
+                        <span>Image query</span>
+                        <input id="lib-search-image" type="file" accept=".jpg,.jpeg,.png,.webp,.bmp" hidden />
+                    </label>
+                    <button id="lib-search-btn" class="btn btn--primary" type="button">Search</button>
+                </div>
+                <div id="lib-search-status" class="status" hidden></div>
+                <div id="lib-search-results" class="search-results"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="folder-detail" hidden>
+        <div class="container">
+            <div class="card">
+                <header class="card__head card__head--row">
+                    <div>
+                        <h2 class="card__title" id="folder-detail-title">Folder</h2>
+                        <p class="card__sub" id="folder-detail-sub"></p>
+                    </div>
+                    <div class="section-actions">
+                        <select id="folder-sort" class="text-input">
+                            <option value="created">Sort: newest</option>
+                            <option value="name">Sort: name</option>
+                            <option value="size">Sort: size</option>
+                            <option value="kind">Sort: kind</option>
+                        </select>
+                        <select id="folder-kind" class="text-input">
+                            <option value="">All kinds</option>
+                            <option value="image">Image</option>
+                            <option value="pdf">PDF</option>
+                            <option value="doc">Word</option>
+                            <option value="text">Text</option>
+                        </select>
+                        <button id="folder-export" class="btn btn--ghost" type="button">Export ZIP</button>
+                        <button id="folder-close" class="btn btn--ghost" type="button">Close</button>
+                    </div>
+                </header>
+                <div id="folder-items" class="library-items"></div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__col footer__col--brand">
+                <a class="nav__brand" href="/">
+                    <img class="logo-mark logo-mark--light" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                    <span class="logo-text">Sanitizer</span>
+                </a>
+                <p class="footer__tag">Privacy-first anonymization and document intelligence.</p>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Product</h4>
+                <a href="/?page=dashboard">Sanitization</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Developer</h4>
+                <a href="/?page=api-docs">API Docs</a>
+                <a href="/docs" target="_blank" rel="noopener">Swagger</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

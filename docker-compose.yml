@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  sanitizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sanitizer:cpu
+    container_name: sanitizer
+    ports:
+      - "${SANITIZER_API_PORT:-8000}:8000"
+    environment:
+      - SANITIZER_DEVICE=cpu
+      - SANITIZER_FACE_BACKEND=ensemble
+      - SANITIZER_OCR_BACKEND=easyocr
+      - SANITIZER_OCR_LANGS=en
+      - SANITIZER_MASK_MODE=blur
+      - SANITIZER_BLUR_KERNEL=51
+    volumes:
+      - ./models:/app/models
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+
+  # Uncomment for GPU. Requires NVIDIA Container Toolkit on host.
+  # sanitizer-gpu:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.gpu
+  #   image: sanitizer:gpu
+  #   container_name: sanitizer-gpu
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - SANITIZER_DEVICE=cuda
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   volumes:
+  #     - ./models:/app/models
+  #     - ./outputs:/app/outputs

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Get Started — Sanitizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="page-sanitize">
+    <!-- ============================ NAV ============================ -->
+    <header class="nav">
+        <div class="nav__inner">
+            <a class="nav__brand" href="/">
+                <img class="logo-mark" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                <span class="logo-text">Sanitizer</span>
+            </a>
+            <nav class="nav__links">
+                <a href="/">Home</a>
+                <a href="/?page=dashboard">Sanitize</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+                <a href="/?page=api-docs">API Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ============================ PAGE TITLE ============================ -->
+    <section class="section section--hero-dashboard">
+        <div class="container">
+            <h1 class="page-title">Anonymize your files</h1>
+            <p class="page-subtitle">Upload images, PDFs, documents, video, or text to redact sensitive information.</p>
+        </div>
+    </section>
+
+    <!-- ============================ UPLOAD ============================ -->
+    <section id="upload" class="section">
+        <div class="container grid grid--upload">
+            <!-- Drop zone card -->
+            <article class="card card--drop">
+                <header class="card__head">
+                    <h2 class="card__title">Upload a file</h2>
+                    <p class="card__sub">Images · PDFs · DOCX · Video · Text</p>
+                </header>
+                <label class="dropzone" id="dropzone">
+                    <input type="file" id="file-input" hidden
+                        accept=".jpg,.jpeg,.png,.tif,.tiff,.bmp,.webp,.pdf,.docx,.mp4,.avi,.mov,.mkv,.webm,.txt,.csv,.md,.json" />
+                    <div class="dropzone__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v12" />
+                            <path d="M7 8l5-5 5 5" />
+                            <path d="M5 21h14a2 2 0 0 0 2-2v-4" />
+                            <path d="M3 15v4a2 2 0 0 0 2 2" />
+                        </svg>
+                    </div>
+                    <div class="dropzone__title">Drop a file or click to browse</div>
+                    <div class="dropzone__hint">Max 200 MB</div>
+                </label>
+                <div class="file-meta" id="file-meta" hidden>
+                    <div class="file-meta__name" id="file-name"></div>
+                    <button class="file-meta__remove" id="file-remove" aria-label="Remove file">×</button>
+                </div>
+            </article>
+
+            <!-- Options card -->
+            <article class="card card--options">
+                <header class="card__head">
+                    <h2 class="card__title">Redaction options</h2>
+                    <p class="card__sub">Configure what to detect and how to mask.</p>
+                </header>
+
+                <div class="opt-group">
+                    <label class="opt-label">Mask mode</label>
+                    <div class="seg" role="radiogroup" aria-label="Mask mode">
+                        <button type="button" class="seg__btn is-active" data-mask="blur">Blur</button>
+                        <button type="button" class="seg__btn" data-mask="pixelate">Pixelate</button>
+                        <button type="button" class="seg__btn" data-mask="blackbox">Black box</button>
+                    </div>
+                </div>
+
+                <div class="opt-group">
+                    <label class="opt-label">Blur strength <span class="opt-value" id="kernel-value">51</span></label>
+                    <input type="range" min="11" max="151" step="2" value="51" id="kernel" class="slider" />
+                </div>
+
+                <div class="opt-group toggles">
+                    <label class="toggle">
+                        <input type="checkbox" id="opt-faces" checked />
+                        <span class="toggle__track"><span class="toggle__thumb"></span></span>
+                        <span class="toggle__label">Redact faces</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="opt-numbers" checked />
+                        <span class="toggle__track"><span class="toggle__thumb"></span></span>
+                        <span class="toggle__label">Redact numbers (IDs, dates, accounts)</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="opt-pii" checked />
+                        <span class="toggle__track"><span class="toggle__thumb"></span></span>
+                        <span class="toggle__label">Redact named PII (names, emails, phones)</span>
+                    </label>
+                </div>
+
+                <div class="opt-group">
+                    <label class="opt-label">Text blur scope</label>
+                    <div class="seg" role="radiogroup" aria-label="Blur scope">
+                        <button type="button" class="seg__btn is-active" data-scope="exact">Exact char</button>
+                        <button type="button" class="seg__btn" data-scope="word">Word</button>
+                        <button type="button" class="seg__btn" data-scope="sentence">Sentence</button>
+                    </div>
+                    <p class="opt-hint">Exact: only the matched characters. Word: the whole word containing them. Sentence: the entire text region containing them.</p>
+                </div>
+
+                <div class="opt-group">
+                    <label class="opt-label" for="keywords">Keywords to mask</label>
+                    <input type="text" id="keywords" class="text-input"
+                        placeholder="comma, separated, terms" />
+                </div>
+
+                <div class="opt-group">
+                    <label class="opt-label" for="patterns">Custom regex patterns</label>
+                    <input type="text" id="patterns" class="text-input"
+                        placeholder="e.g. NID-\d{8}, ACC\d{6}" />
+                </div>
+
+                <button id="run" class="btn btn--primary btn--block" disabled>Sanitize</button>
+                <div id="status" class="status" hidden></div>
+            </article>
+        </div>
+    </section>
+
+    <!-- ============================ VIEWER ============================ -->
+    <section id="viewer" class="section section--alt">
+        <div class="container">
+            <header class="section__head">
+                <h2 class="section__title">Before &amp; after</h2>
+                <p class="section__sub">
+                    Default preview shows the sanitized output. Press and hold
+                    <strong>Show Before</strong> or press anywhere on the viewer to temporarily reveal the original.
+                </p>
+            </header>
+
+            <div class="viewer card" id="viewer-card">
+                <div class="viewer__empty" id="viewer-empty">
+                    Upload and sanitize a file to see the comparison here.
+                </div>
+
+                <!-- Image comparison hold-to-preview -->
+                <div class="viewer__compare" id="viewer-compare" hidden>
+                    <img id="compare-display" alt="Sanitized preview" />
+                    <button id="compare-toggle" class="compare-toggle" type="button">Show Before</button>
+                    <span class="viewer__tag viewer__tag--after" id="compare-label">After</span>
+                </div>
+
+                <!-- Video / PDF / text result -->
+                <div class="viewer__generic" id="viewer-generic" hidden>
+                    <div class="viewer__generic-inner" id="viewer-generic-inner"></div>
+                </div>
+            </div>
+
+            <div class="results" id="results" hidden>
+                <article class="card card--stat">
+                    <span class="stat__label">Total redactions</span>
+                    <span class="stat__value" id="stat-total">0</span>
+                </article>
+                <article class="card card--stat">
+                    <span class="stat__label">Faces</span>
+                    <span class="stat__value" id="stat-faces">0</span>
+                </article>
+                <article class="card card--stat">
+                    <span class="stat__label">Numbers</span>
+                    <span class="stat__value" id="stat-numbers">0</span>
+                </article>
+                <article class="card card--stat">
+                    <span class="stat__label">PII spans</span>
+                    <span class="stat__value" id="stat-pii">0</span>
+                </article>
+                <a id="download" class="card card--download" href="#" download>
+                    <span class="download__label">Download sanitized file</span>
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v12" />
+                        <path d="M7 10l5 5 5-5" />
+                        <path d="M5 21h14" />
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================ FOOTER ============================ -->
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__col footer__col--brand">
+                <a class="nav__brand" href="/">
+                    <img class="logo-mark logo-mark--light" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                    <span class="logo-text">Sanitizer</span>
+                </a>
+                <p class="footer__tag">
+                    Privacy-first data anonymization for production data warehouses.
+                </p>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Product</h4>
+                <a href="/">Home</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Developer</h4>
+                <a href="/?page=api-docs">API Docs</a>
+                <a href="/docs" target="_blank" rel="noopener">Swagger</a>
+                <a href="/health" target="_blank" rel="noopener">Health</a>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Legal</h4>
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+                <a href="#">Security</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+# Core ML / CV
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
+Pillow>=10.2.0
+torch>=2.2.0
+torchvision>=0.17.0
+
+# Face detection (primary + fallback)
+ultralytics>=8.1.0          # YOLOv8 (we load a YOLOv8-face weight)
+insightface>=0.7.3          # RetinaFace + ArcFace embeddings (selective video blur)
+onnxruntime>=1.17.0         # insightface runtime (CPU). Swap for onnxruntime-gpu for CUDA.
+
+# OCR
+easyocr>=1.7.1
+paddleocr>=2.7.3
+paddlepaddle>=2.6.0         # paddleocr backend
+
+# PII / NER on extracted text
+presidio-analyzer>=2.2.354
+presidio-anonymizer>=2.2.354
+spacy>=3.7.0
+# `python -m spacy download en_core_web_lg` is run in Dockerfile / setup
+
+# Document IO
+pypdfium2>=4.27.0           # fast PDF rendering + text extraction
+pdf2image>=1.17.0           # fallback rasterization
+pikepdf>=8.13.0             # rewriting redacted PDFs
+python-docx>=1.1.0
+reportlab>=4.1.0
+filetype>=1.2.0
+
+# API
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+
+# Utilities
+tqdm>=4.66.0
+loguru>=0.7.2

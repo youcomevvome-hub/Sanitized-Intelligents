@@ -1,0 +1,38 @@
+# GPU image: same as Dockerfile but on a CUDA base.
+# Build:  docker build -f Dockerfile.gpu -t sanitizer:gpu .
+# Run:    docker run --gpus all -p 8000:8000 sanitizer:gpu
+
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    SANITIZER_DEVICE=cuda \
+    SANITIZER_MODEL_DIR=/app/models
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-dev python3-pip \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+        ffmpeg ca-certificates curl \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt requirements-gpu.txt ./
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt -r requirements-gpu.txt
+
+RUN python -m spacy download en_core_web_lg
+
+COPY sanitizer ./sanitizer
+COPY api ./api
+COPY frontend ./frontend
+COPY pyproject.toml ./
+RUN pip install -e .
+
+RUN mkdir -p /app/models /app/outputs
+
+EXPOSE 8000
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

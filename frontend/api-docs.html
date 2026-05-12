@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API Documentation — Sanitizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="page-docs">
+    <!-- ============================ NAV ============================ -->
+    <header class="nav">
+        <div class="nav__inner">
+            <a class="nav__brand" href="/">
+                <img class="logo-mark" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                <span class="logo-text">Sanitizer</span>
+            </a>
+            <nav class="nav__links">
+                <a href="/">Home</a>
+                <a href="/?page=dashboard">Sanitize</a>
+                <a href="/?page=intelligence">Intelligence</a>
+                <a href="/?page=how-it-works">How It Works</a>
+                <a href="/?page=api-docs">API Docs</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ============================ PAGE TITLE ============================ -->
+    <section class="section section--hero-dashboard">
+        <div class="container">
+            <h1 class="page-title">API Documentation</h1>
+            <p class="page-subtitle">Integrate Sanitizer into your backend with our REST API.</p>
+        </div>
+    </section>
+
+    <!-- ============================ CONTENT ============================ -->
+    <section class="section">
+        <div class="container container--narrow">
+            <!-- BASE URL -->
+            <div class="api-section">
+                <h2 class="api-section__title">Base URL</h2>
+                <div class="code-block">
+                    <code>https://your-sanitizer-instance.com</code>
+                </div>
+            </div>
+
+            <!-- AUTHENTICATION -->
+            <div class="api-section">
+                <h2 class="api-section__title">Authentication</h2>
+                <p>The API is documented here with an example access key. If you enable auth on the backend, send the key as a header.</p>
+                <div class="code-block">
+                    <code><pre>X-Access-Key: youNeedAccessAsk</pre></code>
+                </div>
+            </div>
+
+            <div class="api-section">
+                <h2 class="api-section__title">Model stack</h2>
+                <div class="file-types-grid">
+                    <div class="file-type">
+                        <h4>Faces</h4>
+                        <p>YOLOv8-face + RetinaFace ensemble</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>OCR</h4>
+                        <p>EasyOCR with PaddleOCR fallback</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>PII</h4>
+                        <p>Presidio + spaCy + regex fallbacks</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>Video identity</h4>
+                        <p>ArcFace embeddings for selective blur</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ENDPOINTS -->
+            <div class="api-section">
+                <h2 class="api-section__title">Endpoints</h2>
+
+                <!-- Health -->
+                <div class="endpoint">
+                    <div class="endpoint__header">
+                        <span class="endpoint__method endpoint__method--get">GET</span>
+                        <span class="endpoint__path">/health</span>
+                    </div>
+                    <p class="endpoint__desc">Check API health and configuration.</p>
+                    
+                    <div class="endpoint__subsection">
+                        <h4>Response</h4>
+                        <div class="code-block">
+                            <code><pre>{
+  "status": "ok",
+  "version": "0.1.0",
+  "face_backend": "ensemble",
+  "ocr_backend": "easyocr"
+}</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Example (curl)</h4>
+                        <div class="code-block">
+                            <code><pre>curl -X GET http://localhost:8000/health</pre></code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sanitize -->
+                <div class="endpoint">
+                    <div class="endpoint__header">
+                        <span class="endpoint__method endpoint__method--post">POST</span>
+                        <span class="endpoint__path">/sanitize</span>
+                    </div>
+                    <p class="endpoint__desc">Sanitize a single file (image, PDF, DOCX, video, or text).</p>
+                    
+                    <div class="endpoint__subsection">
+                        <h4>Request (multipart/form-data)</h4>
+                        <div class="code-block">
+                            <code><pre>file: (binary) — The file to sanitize
+options: (JSON string) — Redaction configuration</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Options Schema</h4>
+                        <div class="code-block">
+                            <code><pre>{
+  "mask_mode": "blur",           // "blur" | "pixelate" | "blackbox"
+  "blur_kernel": 51,             // kernel size (must be odd, 11-151)
+  "redact_faces": true,          // detect and mask faces
+  "redact_numbers": true,        // detect and mask ID/account/date numbers
+  "redact_pii": true,            // detect and mask named PII (emails, phones, etc.)
+  "keywords": ["keyword1"],      // additional keywords to redact
+  "custom_patterns": [],         // regex patterns to redact (e.g., ["NID-\\d{8}"])
+  "ocr_langs": ["en"],           // OCR languages (default: auto-detect)
+  "whitelist_face_ids": [],      // for video: faces to NOT blur
+  "blacklist_face_ids": []       // for video: faces to blur only
+}</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Response Headers</h4>
+                        <div class="code-block">
+                            <code><pre>Content-Type: image/png (or application/pdf, etc.)
+Content-Disposition: attachment; filename=sanitized_...
+X-Sanitizer-Summary: {"faces": 2, "numbers": 5, "pii": 1, "total": 8}</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Example with access key</h4>
+                        <div class="code-block">
+                            <code><pre>curl -X POST http://localhost:8000/sanitize \
+  -H "X-Access-Key: youNeedAccessAsk" \
+  -F "file=@photo.jpg" \
+  -F 'options={"mask_mode":"blur","blur_kernel":51,"redact_faces":true}' \
+  -o sanitized.jpg</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Example (Python)</h4>
+                        <div class="code-block">
+                            <code><pre>import requests
+
+url = "http://localhost:8000/sanitize"
+files = {"file": open("photo.jpg", "rb")}
+options = {
+    "mask_mode": "blur",
+    "blur_kernel": 51,
+    "redact_faces": True,
+    "redact_numbers": True,
+    "redact_pii": True,
+    "keywords": ["SECRET"]
+}
+
+response = requests.post(
+    url,
+    files=files,
+    data={"options": str(options).replace("'", '"')}
+)
+
+# Save sanitized file
+with open("sanitized.jpg", "wb") as f:
+    f.write(response.content)
+
+# Check detections
+summary = response.headers.get("X-Sanitizer-Summary")
+print(f"Detections: {summary}")</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Example (cURL)</h4>
+                        <div class="code-block">
+                            <code><pre>curl -X POST http://localhost:8000/sanitize \
+  -F "file=@photo.jpg" \
+  -F 'options={"mask_mode":"blur","blur_kernel":51,"redact_faces":true}' \
+  -o sanitized.jpg</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Example (JavaScript/Node)</h4>
+                        <div class="code-block">
+                            <code><pre>const fs = require('fs');
+
+const formData = new FormData();
+formData.append('file', fs.createReadStream('photo.jpg'));
+formData.append('options', JSON.stringify({
+  mask_mode: 'blur',
+  blur_kernel: 51,
+  redact_faces: true,
+  redact_numbers: true,
+  redact_pii: true,
+  keywords: ['SECRET']
+}));
+
+fetch('http://localhost:8000/sanitize', {
+  method: 'POST',
+  body: formData
+})
+.then(r => r.blob())
+.then(blob => {
+  fs.writeFileSync('sanitized.jpg', blob);
+  console.log('Sanitized!');
+});</pre></code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sanitize Info -->
+                <div class="endpoint">
+                    <div class="endpoint__header">
+                        <span class="endpoint__method endpoint__method--post">POST</span>
+                        <span class="endpoint__path">/sanitize/info</span>
+                    </div>
+                    <p class="endpoint__desc">Analyze a file without returning the sanitized output (returns JSON detection stats only).</p>
+                    
+                    <div class="endpoint__subsection">
+                        <h4>Response (JSON)</h4>
+                        <div class="code-block">
+                            <code><pre>{
+  "total_detections": 8,
+  "by_kind": {
+    "face": 2,
+    "number": 5,
+    "pii": 1
+  }
+}</pre></code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sanitize Video -->
+                <div class="endpoint">
+                    <div class="endpoint__header">
+                        <span class="endpoint__method endpoint__method--post">POST</span>
+                        <span class="endpoint__path">/sanitize/video</span>
+                    </div>
+                    <p class="endpoint__desc">Sanitize video with optional selective face blur (whitelist/blacklist specific identities).</p>
+                    
+                    <div class="endpoint__subsection">
+                        <h4>Request (multipart/form-data)</h4>
+                        <div class="code-block">
+                            <code><pre>file: (binary) — Video file to sanitize
+options: (JSON string) — Redaction config (same as /sanitize)
+reference_faces: (optional, files) — Reference images for identity matching</pre></code>
+                        </div>
+                    </div>
+
+                    <div class="endpoint__subsection">
+                        <h4>Selective Blur Logic</h4>
+                        <ul style="line-height: 1.8;">
+                            <li><strong>No whitelist/blacklist:</strong> All faces blurred</li>
+                            <li><strong>Whitelist only:</strong> Only faces matching reference images are blurred</li>
+                            <li><strong>Blacklist only:</strong> All faces blurred except those matching reference images</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILE TYPE SUPPORT -->
+            <div class="api-section">
+                <h2 class="api-section__title">Supported File Types</h2>
+                <div class="file-types-grid">
+                    <div class="file-type">
+                        <h4>Images</h4>
+                        <p>.jpg, .jpeg, .png, .tif, .tiff, .bmp, .webp</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>Documents</h4>
+                        <p>.pdf (digital & scanned), .docx (with embedded images)</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>Video</h4>
+                        <p>.mp4, .avi, .mov, .mkv, .webm</p>
+                    </div>
+                    <div class="file-type">
+                        <h4>Text</h4>
+                        <p>.txt, .csv, .md, .json</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DEPLOYMENT -->
+            <div class="api-section">
+                <h2 class="api-section__title">Deployment</h2>
+                <p>Deploy Sanitizer using Docker:</p>
+                <div class="code-block">
+                    <code><pre># CPU (default)
+docker-compose up -d
+
+# GPU (CUDA 12)
+docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up -d</pre></code>
+                </div>
+            </div>
+
+            <!-- STATUS CODES -->
+            <div class="api-section">
+                <h2 class="api-section__title">HTTP Status Codes</h2>
+                <table class="status-codes">
+                    <tr>
+                        <td><strong>200</strong></td>
+                        <td>Success — file sanitized or info returned</td>
+                    </tr>
+                    <tr>
+                        <td><strong>400</strong></td>
+                        <td>Bad request — invalid options or unsupported file type</td>
+                    </tr>
+                    <tr>
+                        <td><strong>413</strong></td>
+                        <td>Payload too large — file exceeds size limit (200MB default)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>415</strong></td>
+                        <td>Unsupported media type</td>
+                    </tr>
+                    <tr>
+                        <td><strong>500</strong></td>
+                        <td>Server error — processing failed</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- RESOURCES -->
+            <div class="api-section">
+                <h2 class="api-section__title">Resources</h2>
+                <ul style="line-height: 2;">
+                    <li><a href="/docs" target="_blank">Swagger UI</a> — Interactive API explorer</li>
+                    <li><a href="/redoc" target="_blank">ReDoc</a> — Beautiful API documentation</li>
+                    <li><a href="https://github.com" target="_blank">GitHub Repository</a> — Source code and examples</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================ FOOTER ============================ -->
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__col footer__col--brand">
+                <a class="nav__brand" href="/">
+                    <img class="logo-mark logo-mark--light" src="/static/assets/logo-container.svg" alt="" aria-hidden="true" />
+                    <span class="logo-text">Sanitizer</span>
+                </a>
+                <p class="footer__tag">
+                    Privacy-first data anonymization for production data warehouses.
+                </p>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Product</h4>
+                <a href="/">Home</a>
+                    <a href="/?page=dashboard">Sanitization</a>
+                    <a href="/?page=intelligence">Intelligence</a>
+                    <a href="/?page=how-it-works">How It Works</a>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Developer</h4>
+                <a href="/docs" target="_blank" rel="noopener">Swagger</a>
+                <a href="/redoc" target="_blank" rel="noopener">ReDoc</a>
+                <a href="/health" target="_blank" rel="noopener">Health</a>
+            </div>
+            <div class="footer__col">
+                <h4 class="footer__h">Legal</h4>
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+                <a href="#">Security</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function navigate(page) {
+            window.location.href = `/?page=${page}`;
+        }
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
