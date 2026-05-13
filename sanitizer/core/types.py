@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class DetectionKind(str, Enum):
@@ -46,6 +46,10 @@ class SanitizeRequest:
     custom_patterns: List[str] = field(default_factory=list)
     # Specific OCR strings to redact (exact, case-insensitive)
     keywords: List[str] = field(default_factory=list)
+    # Replacement token for text/docx detected spans.
+    replacement_text: Optional[str] = None
+    # Explicit literal replacements applied to text/docx before detection.
+    custom_replacements: Dict[str, str] = field(default_factory=dict)
     # Selective face blur for video:
     #   whitelist_face_ids -> these identities are NOT blurred (e.g. consenting subjects)
     #   blacklist_face_ids -> ONLY these identities get blurred

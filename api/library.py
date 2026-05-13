@@ -228,6 +228,73 @@ def _index_item(folder: str, stored_name: str, original_name: str,
     return item
 
 
+def _unique_target(folder: str, desired_name: str) -> Path:
+    fp = _folder_path(folder)
+    fp.mkdir(parents=True, exist_ok=True)
+    ext = Path(desired_name).suffix
+    stem = Path(desired_name).stem
+    safe_name = _safe(stem, "item") + ext
+    target = fp / safe_name
+    if target.exists():
+        target = fp / f"{_safe(stem, 'item')}_{int(time.time() * 1000)}{ext}"
+    return target
+
+
+def _save_and_index_file(folder: str, original_name: str, raw_bytes: bytes,
+                         tags: List[str], display_name: str = "") -> Dict[str, Any]:
+    ext = Path(original_name).suffix or ""
+    base = Path(original_name).stem or f"upload_{uuid.uuid4().hex}"
+    desired = f"{_safe(base, 'item')}{ext}"
+    target = _unique_target(folder, desired)
+    target.write_bytes(raw_bytes)
+    return _index_item(
+        folder,
+        target.name,
+        original_name,
+        display_name or Path(original_name).stem,
+        tags,
+    )
+
+
+def _extract_zip_to_library(folder: str, zip_upload: UploadFile, tags: List[str]) -> List[Dict[str, Any]]:
+    payload = zip_upload.file.read()
+    if not payload:
+        return []
+
+    zip_name = Path(zip_upload.filename or f"archive_{uuid.uuid4().hex}.zip").stem
+    zip_folder = _safe(f"{folder}_{zip_name}", "default_zip")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile:
+        raise HTTPException(400, f"Invalid ZIP file: {zip_upload.filename or 'upload.zip'}")
+
+    indexed: List[Dict[str, Any]] = []
+    max_entries = 1000
+    max_uncompressed = 512 * 1024 * 1024
+    total_uncompressed = 0
+
+    with zf:
+        infos = [i for i in zf.infolist() if not i.is_dir()]
+        if len(infos) > max_entries:
+            raise HTTPException(400, "ZIP contains too many files")
+
+        for info in infos:
+            total_uncompressed += int(info.file_size or 0)
+            if total_uncompressed > max_uncompressed:
+                raise HTTPException(400, "ZIP is too large when extracted")
+
+            original_leaf = Path(info.filename).name
+            if not original_leaf or original_leaf == "_meta.json":
+                continue
+
+            data = zf.read(info)
+            item = _save_and_index_file(zip_folder, original_leaf, data, tags)
+            indexed.append(item)
+
+    return indexed
+
+
 # ---------------------------------------------------------------------------
 # Folder endpoints
 # ---------------------------------------------------------------------------
@@ -293,6 +360,47 @@ async def save_item(
     tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
     item = _index_item(folder, target.name, original, name or Path(original).stem, tag_list)
     return JSONResponse({"folder": folder, "item": item})
+
+
+@router.post("/save-bulk")
+async def save_bulk_items(
+    files: Optional[List[UploadFile]] = File(None),
+    zip_files: Optional[List[UploadFile]] = File(None),
+    folder: str = Form("default"),
+    tags: str = Form("", description="Comma-separated tags"),
+) -> JSONResponse:
+    files = files or []
+    zip_files = zip_files or []
+    if not files and not zip_files:
+        raise HTTPException(400, "Provide at least one file or zip file")
+
+    base_folder = _safe(folder or "default", "default")
+    tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
+
+    saved_items: List[Dict[str, Any]] = []
+    zip_folder_counts: Dict[str, int] = {}
+
+    for up in files:
+        original = up.filename or f"upload_{uuid.uuid4().hex}"
+        raw = await up.read()
+        item = _save_and_index_file(base_folder, original, raw, tag_list)
+        saved_items.append(item)
+
+    for zup in zip_files:
+        extracted = _extract_zip_to_library(base_folder, zup, tag_list)
+        saved_items.extend(extracted)
+        zname = Path(zup.filename or "archive.zip").stem
+        zfolder = _safe(f"{base_folder}_{zname}", "default_zip")
+        zip_folder_counts[zfolder] = zip_folder_counts.get(zfolder, 0) + len(extracted)
+
+    return JSONResponse(
+        {
+            "base_folder": base_folder,
+            "saved_count": len(saved_items),
+            "zip_folders": zip_folder_counts,
+            "items": saved_items,
+        }
+    )
 
 
 @router.get("/{folder}")

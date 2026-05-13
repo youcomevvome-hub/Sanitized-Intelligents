@@ -14,13 +14,21 @@ class SanitizeOptions(BaseModel):
     redact_pii: bool = True
     custom_patterns: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
+    replacement_text: Optional[str] = Field(
+        None,
+        description="Replacement token for detected text redactions (default [REDACTED])",
+    )
+    custom_replacements: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Literal text replacements applied before detection, e.g. {\"John\":\"Client\"}",
+    )
     whitelist_face_ids: List[str] = Field(default_factory=list)
     blacklist_face_ids: List[str] = Field(default_factory=list)
     ocr_langs: Optional[List[str]] = None
     blur_scope: str = Field("exact", description="exact | word | sentence")
     video_redaction_region: str = Field(
         "face_only",
-        description="face_only | whole_body | body_no_face",
+        description="face_only | face_and_body | body_no_face",
     )
 
 

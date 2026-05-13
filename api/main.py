@@ -103,6 +103,8 @@ def _options_to_request(opts: SanitizeOptions) -> SanitizeRequest:
         redact_pii=opts.redact_pii,
         custom_patterns=opts.custom_patterns,
         keywords=opts.keywords,
+        replacement_text=opts.replacement_text,
+        custom_replacements=opts.custom_replacements,
         whitelist_face_ids=opts.whitelist_face_ids,
         blacklist_face_ids=opts.blacklist_face_ids,
         ocr_langs=opts.ocr_langs,
@@ -323,13 +325,21 @@ async def preview_video_faces(
 
     detector = get_pipeline().face_det
     faces_payload: list[dict[str, Any]] = []
+    from sanitizer.handlers.video import _detect_faces_robust
 
     try:
-        for _ in range(20):
+        # Scan early sampled frames until we find faces; this is more robust
+        # than relying on a single frame and still keeps deterministic IDs.
+        for frame_idx in range(45):
             ok, frame = cap.read()
             if not ok:
                 break
-            detections = detector.detect(frame)
+            detections = _detect_faces_robust(
+                detector,
+                frame,
+                frame_idx=frame_idx,
+                orientation_retry_every=1,
+            )
             detections.sort(key=lambda d: (d.bbox[0], d.bbox[1]))
             if not detections:
                 continue
@@ -477,13 +487,14 @@ async def sanitize_bulk(
     summary: List[dict] = []
 
     pipe = get_pipeline()
-    for upload in files:
-        src = workdir / (upload.filename or f"input_{uuid.uuid4().hex}")
-        _save_upload(upload, src)
+    max_zip_entries = 1000
+    max_zip_uncompressed = 512 * 1024 * 1024
+
+    def _sanitize_one(src: Path, display_name: str) -> None:
         category = detect_category(src)
         if category in {"unknown", "video"}:
-            summary.append({"filename": upload.filename, "status": "skipped", "reason": f"unsupported category: {category}"})
-            continue
+            summary.append({"filename": display_name, "status": "skipped", "reason": f"unsupported category: {category}"})
+            return
 
         suffix = {
             "image": ".png",
@@ -491,13 +502,46 @@ async def sanitize_bulk(
             "docx": ".docx",
             "text": src.suffix or ".txt",
         }[category]
-        out = outdir / f"sanitized_{Path(src.name).stem}{suffix}"
+        out = outdir / f"sanitized_{Path(src.name).stem}_{uuid.uuid4().hex[:8]}{suffix}"
 
         try:
             result = pipe.sanitize(src, out, request)
-            summary.append({"filename": upload.filename, "status": "ok", "media_type": result.media_type})
+            summary.append({"filename": display_name, "status": "ok", "media_type": result.media_type})
         except Exception as e:
-            summary.append({"filename": upload.filename, "status": "error", "reason": str(e)[:220]})
+            summary.append({"filename": display_name, "status": "error", "reason": str(e)[:220]})
+
+    for upload in files:
+        filename = upload.filename or f"input_{uuid.uuid4().hex}"
+        src = workdir / filename
+        _save_upload(upload, src)
+
+        if src.suffix.lower() == ".zip":
+            try:
+                with zipfile.ZipFile(src, "r") as zf:
+                    infos = [i for i in zf.infolist() if not i.is_dir()]
+                    if len(infos) > max_zip_entries:
+                        summary.append({"filename": filename, "status": "error", "reason": "zip has too many files"})
+                        continue
+
+                    total_uncompressed = 0
+                    for info in infos:
+                        total_uncompressed += int(info.file_size or 0)
+                        if total_uncompressed > max_zip_uncompressed:
+                            summary.append({"filename": filename, "status": "error", "reason": "zip is too large when extracted"})
+                            break
+
+                        leaf = Path(info.filename).name
+                        if not leaf:
+                            continue
+                        extracted = workdir / f"zip_{uuid.uuid4().hex[:8]}_{leaf}"
+                        with zf.open(info, "r") as zsrc, extracted.open("wb") as dst:
+                            shutil.copyfileobj(zsrc, dst)
+                        _sanitize_one(extracted, f"{filename}:{leaf}")
+            except zipfile.BadZipFile:
+                summary.append({"filename": filename, "status": "error", "reason": "invalid zip archive"})
+            continue
+
+        _sanitize_one(src, filename)
 
     zip_path = workdir / f"{safe_group}_sanitized.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:

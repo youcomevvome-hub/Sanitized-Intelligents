@@ -6,6 +6,8 @@
 
     const state = {
         file: null,
+        files: [],
+        beforeBlob: null,
         beforeUrl: null,
         afterUrl: null,
         afterBlob: null,
@@ -28,6 +30,10 @@
     const IMAGE_EXT = ["jpg", "jpeg", "png", "tif", "tiff", "bmp", "webp"];
     const VIDEO_EXT = ["mp4", "avi", "mov", "mkv", "webm"];
     const TEXT_EXT = ["txt", "csv", "md", "json"];
+
+    function fileKey(file) {
+        return `${file.name}::${file.size}::${file.lastModified || 0}`;
+    }
 
     function categorize(filename) {
         const ext = (filename.split(".").pop() || "").toLowerCase();
@@ -248,7 +254,7 @@
             state.videoFaces = [];
             state.selectedVideoFaceIds = new Set();
             renderVideoFaceGrid();
-            setVideoFaceStatus("Detecting faces in first frame...", { busy: true });
+            setVideoFaceStatus("Detecting faces in early frames...", { busy: true });
 
             try {
                 const form = new FormData();
@@ -265,20 +271,22 @@
             }
         }
 
-        function setFile(file) {
-            if (!file) return;
+        function setPrimaryFile(file) {
+            if (!file) {
+                state.file = null;
+                state.category = null;
+                if (state.beforeUrl) URL.revokeObjectURL(state.beforeUrl);
+                state.beforeUrl = null;
+                state.beforeBlob = null;
+                return;
+            }
             state.file = file;
             state.category = categorize(file.name);
+            state.beforeBlob = file.slice(0, file.size, file.type || "application/octet-stream");
 
             if (state.beforeUrl) URL.revokeObjectURL(state.beforeUrl);
-            state.beforeUrl = URL.createObjectURL(file);
+            state.beforeUrl = URL.createObjectURL(state.beforeBlob);
 
-            const meta = $("#file-meta");
-            const name = $("#file-name");
-            if (meta && name) {
-                meta.hidden = false;
-                name.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
-            }
             if (state.category === "video") {
                 detectVideoFaces(file);
             } else {
@@ -291,14 +299,117 @@
             clearStatus();
         }
 
+        function updateUploadMeta() {
+            const meta = $("#file-meta");
+            const name = $("#file-name");
+            const files = state.files;
+            if (!meta || !name) return;
+            meta.hidden = !files.length;
+            if (!files.length) return;
+
+            if (files.length === 1) {
+                const file = files[0];
+                name.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+            } else {
+                const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024;
+                const previewName = state.file ? state.file.name : files[0].name;
+                name.textContent = `${files.length} uploads · ${totalMb.toFixed(2)} MB total · previewing ${previewName}`;
+            }
+        }
+
+        function renderUploadList() {
+            const list = $("#upload-list");
+            if (!list) return;
+            if (!state.files.length) {
+                list.hidden = true;
+                list.innerHTML = "";
+                return;
+            }
+
+            list.hidden = false;
+            list.innerHTML = state.files.map((f, idx) => {
+                const active = state.file && fileKey(state.file) === fileKey(f) ? "is-active" : "";
+                return `
+                    <button type="button" class="upload-chip ${active}" data-upload-index="${idx}" title="Preview this upload">
+                        <span class="upload-chip__name">${f.name}</span>
+                        <span class="upload-chip__size">${(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                        <span class="upload-chip__close" data-upload-remove="${idx}" aria-label="Remove ${f.name}">×</span>
+                    </button>`;
+            }).join("");
+
+            list.querySelectorAll("[data-upload-index]").forEach((btn) => {
+                btn.addEventListener("click", (e) => {
+                    const removeAttr = e.target && e.target.getAttribute ? e.target.getAttribute("data-upload-remove") : null;
+                    if (removeAttr !== null) return;
+                    const idx = Number(btn.getAttribute("data-upload-index"));
+                    if (Number.isNaN(idx) || !state.files[idx]) return;
+                    setPrimaryFile(state.files[idx]);
+                    updateUploadMeta();
+                    renderUploadList();
+                });
+            });
+
+            list.querySelectorAll("[data-upload-remove]").forEach((btn) => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const idx = Number(btn.getAttribute("data-upload-remove"));
+                    if (Number.isNaN(idx)) return;
+                    removeUploadAt(idx);
+                });
+            });
+        }
+
+        function addFiles(filesLike) {
+            const incoming = Array.from(filesLike || []);
+            if (!incoming.length) return;
+
+            const existing = new Set(state.files.map((f) => fileKey(f)));
+            const uniqueIncoming = incoming.filter((f) => !existing.has(fileKey(f)));
+            if (!uniqueIncoming.length) return;
+
+            state.files = [...state.files, ...uniqueIncoming];
+            if (!state.file) {
+                setPrimaryFile(state.files[0]);
+            }
+            updateUploadMeta();
+            renderUploadList();
+            runBtn.disabled = false;
+            clearStatus();
+        }
+
+        function removeUploadAt(idx) {
+            if (idx < 0 || idx >= state.files.length) return;
+            const removingActive = state.file && fileKey(state.file) === fileKey(state.files[idx]);
+            state.files.splice(idx, 1);
+
+            if (!state.files.length) {
+                clearFile();
+                return;
+            }
+
+            if (removingActive) {
+                setPrimaryFile(state.files[Math.min(idx, state.files.length - 1)]);
+            }
+            updateUploadMeta();
+            renderUploadList();
+        }
+
         function clearFile() {
             state.file = null;
+            state.files = [];
+            state.beforeBlob = null;
             state.category = null;
             if (state.beforeUrl) URL.revokeObjectURL(state.beforeUrl);
             state.beforeUrl = null;
             fi.value = "";
             const meta = $("#file-meta");
             if (meta) meta.hidden = true;
+            const list = $("#upload-list");
+            if (list) {
+                list.hidden = true;
+                list.innerHTML = "";
+            }
             state.videoFaces = [];
             state.selectedVideoFaceIds = new Set();
             renderVideoFaceGrid();
@@ -310,6 +421,8 @@
             const kernel = $("#kernel");
             const keywordsEl = $("#keywords");
             const patternsEl = $("#patterns");
+            const replacementTextEl = $("#replacement-text");
+            const customReplacementsEl = $("#custom-replacements");
             let whitelistIds = [];
             let blacklistIds = [];
             if (state.category === "video" && state.videoFaces.length) {
@@ -317,6 +430,21 @@
                 if (state.videoFaceMode === "keep-selected") whitelistIds = selected;
                 else blacklistIds = selected;
             }
+
+            const replacementPairs = {};
+            const rawPairs = (customReplacementsEl && customReplacementsEl.value ? customReplacementsEl.value : "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            rawPairs.forEach((pair) => {
+                const idx = pair.indexOf(":");
+                if (idx <= 0) return;
+                const from = pair.slice(0, idx).trim();
+                const to = pair.slice(idx + 1).trim();
+                if (!from) return;
+                replacementPairs[from] = to;
+            });
+
             return {
                 mask_mode: state.maskMode,
                 blur_kernel: kernel ? parseInt(kernel.value, 10) : 51,
@@ -325,6 +453,8 @@
                 redact_pii: !!($("#opt-pii") && $("#opt-pii").checked),
                 keywords: keywordsEl ? keywordsEl.value.split(",").map((s) => s.trim()).filter(Boolean) : [],
                 custom_patterns: patternsEl ? patternsEl.value.split(",").map((s) => s.trim()).filter(Boolean) : [],
+                replacement_text: replacementTextEl ? replacementTextEl.value.trim() : "",
+                custom_replacements: replacementPairs,
                 blur_scope: state.blurScope || "exact",
                 whitelist_face_ids: whitelistIds,
                 blacklist_face_ids: blacklistIds,
@@ -406,24 +536,115 @@
             const generic = $("#viewer-generic");
             if (!inner || !generic) return;
             inner.innerHTML = `
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                    <div>
-                        <div style="font-size:12px; color:var(--ink-500); margin-bottom:8px; text-transform:uppercase; letter-spacing:.06em;">Before</div>
+                <div class="doc-compare-grid">
+                    <div class="doc-pane">
+                        <div class="doc-pane__label">Before</div>
                         <iframe src="${state.beforeUrl}" title="Original PDF"></iframe>
+                        <a class="doc-pane__link" href="${state.beforeUrl}" target="_blank" rel="noopener">Open original PDF in new tab</a>
                     </div>
-                    <div>
-                        <div style="font-size:12px; color:var(--ink-500); margin-bottom:8px; text-transform:uppercase; letter-spacing:.06em;">After</div>
+                    <div class="doc-pane">
+                        <div class="doc-pane__label">After</div>
                         <iframe src="${state.afterUrl}" title="Sanitized PDF"></iframe>
+                        <a class="doc-pane__link" href="${state.afterUrl}" target="_blank" rel="noopener">Open sanitized PDF in new tab</a>
                     </div>
                 </div>`;
+            generic.hidden = false;
+        }
+
+        async function renderDocxSideBySide() {
+            const inner = $("#viewer-generic-inner");
+            const generic = $("#viewer-generic");
+            if (!inner || !generic || !state.afterBlob || !state.file) return;
+
+            const hasMammoth = !!(window.mammoth && typeof window.mammoth.convertToHtml === "function");
+            const fallbackHtml = "<p>Preview unavailable for this document version. Use download/open to inspect.</p>";
+
+            const convertDocx = async (blob) => {
+                if (!hasMammoth) return fallbackHtml;
+                try {
+                    const buf = await blob.arrayBuffer();
+                    const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+                    return res.value || fallbackHtml;
+                } catch {
+                    return fallbackHtml;
+                }
+            };
+
+            const [beforeHtml, afterHtml] = await Promise.all([
+                convertDocx(state.beforeBlob || state.file),
+                convertDocx(state.afterBlob),
+            ]);
+
+            inner.innerHTML = `
+                <div class="doc-editor-toolbar" id="doc-editor-toolbar">
+                    <span class="doc-editor-toolbar__title">Edit sanitized document view</span>
+                    <select id="doc-font-family" class="doc-editor-select">
+                        <option value="Roboto, sans-serif">Roboto</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Times New Roman', serif">Times New Roman</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                    </select>
+                    <select id="doc-font-size" class="doc-editor-select">
+                        <option value="12">12</option>
+                        <option value="14" selected>14</option>
+                        <option value="16">16</option>
+                        <option value="18">18</option>
+                        <option value="20">20</option>
+                    </select>
+                    <button type="button" class="doc-editor-btn" data-cmd="bold"><strong>B</strong></button>
+                    <button type="button" class="doc-editor-btn" data-cmd="italic"><em>I</em></button>
+                    <button type="button" class="doc-editor-btn" data-cmd="underline"><u>U</u></button>
+                </div>
+                <div class="doc-compare-grid">
+                    <div class="doc-pane">
+                        <div class="doc-pane__label">Before</div>
+                        <div class="doc-pane__content">${beforeHtml}</div>
+                        <a class="doc-pane__link" href="${state.beforeUrl}" download="${state.file.name}">Download original DOCX</a>
+                    </div>
+                    <div class="doc-pane">
+                        <div class="doc-pane__label">After</div>
+                        <div class="doc-pane__content" id="doc-after-editor" contenteditable="true">${afterHtml}</div>
+                        <a class="doc-pane__link" href="${state.afterUrl}" download="${state.afterName || "sanitized.docx"}">Download sanitized DOCX</a>
+                    </div>
+                </div>`;
+
+            const editor = $("#doc-after-editor");
+            const fontFamily = $("#doc-font-family");
+            const fontSize = $("#doc-font-size");
+
+            if (editor && fontFamily && fontSize) {
+                editor.style.fontFamily = fontFamily.value;
+                editor.style.fontSize = `${fontSize.value}px`;
+
+                const focusEditor = () => editor.focus();
+                const commandButtons = inner.querySelectorAll(".doc-editor-btn[data-cmd]");
+                commandButtons.forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        focusEditor();
+                        document.execCommand(btn.getAttribute("data-cmd"));
+                    });
+                });
+
+                fontFamily.addEventListener("change", () => {
+                    editor.style.fontFamily = fontFamily.value;
+                    focusEditor();
+                });
+
+                fontSize.addEventListener("change", () => {
+                    editor.style.fontSize = `${fontSize.value}px`;
+                    focusEditor();
+                });
+            }
+
             generic.hidden = false;
         }
 
         async function renderTextSideBySide() {
             const inner = $("#viewer-generic-inner");
             const generic = $("#viewer-generic");
-            if (!inner || !generic || !state.afterBlob || !state.file) return;
-            const [beforeText, afterText] = await Promise.all([state.file.text(), state.afterBlob.text()]);
+            if (!inner || !generic || !state.afterBlob || !state.file || !state.beforeBlob) return;
+            const [beforeText, afterText] = await Promise.all([state.beforeBlob.text(), state.afterBlob.text()]);
             inner.innerHTML = `
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
                     <div>
@@ -489,6 +710,8 @@
                 renderVideoSideBySide();
             } else if (state.category === "pdf") {
                 renderPdfInline();
+            } else if (state.category === "docx") {
+                await renderDocxSideBySide();
             } else if (state.category === "text") {
                 await renderTextSideBySide();
             } else {
@@ -499,25 +722,69 @@
         }
 
         async function runSanitize() {
-            if (!state.file) return;
-            const endpoint = state.category === "video" ? "/sanitize/video" : "/sanitize";
-            const form = new FormData();
-            form.append("file", state.file);
-            form.append("options", JSON.stringify(buildOptions()));
+            const files = state.files && state.files.length ? state.files : (state.file ? [state.file] : []);
+            if (!files.length) return;
+            const hasZip = files.some((f) => (f.name || "").toLowerCase().endsWith(".zip"));
 
             runBtn.disabled = true;
             setStatus("Uploading... 0%", { busy: true });
             try {
-                const res = await xhrFormRequest(endpoint, form, {
-                    responseType: "blob",
-                    onProgress: (pct) => setStatus(`Uploading... ${pct}%`, { busy: true }),
-                });
-                setStatus("Processing uploaded file...", { busy: true });
-                const summaryHeader = res.getHeader("X-Sanitizer-Summary");
-                const summary = summaryHeader ? JSON.parse(summaryHeader) : null;
-                const blob = res.data;
-                await handleResult(blob, summary);
-                setStatus("Done. Compare the result below.");
+                if (files.length > 1 || hasZip) {
+                    const form = new FormData();
+                    files.forEach((f) => form.append("files", f));
+                    form.append("options", JSON.stringify(buildOptions()));
+                    form.append("group_name", "dashboard-bulk");
+
+                    const res = await xhrFormRequest("/sanitize/bulk", form, {
+                        responseType: "blob",
+                        onProgress: (pct) => setStatus(`Uploading... ${pct}%`, { busy: true }),
+                    });
+
+                    if (state.afterUrl) URL.revokeObjectURL(state.afterUrl);
+                    state.afterBlob = res.data;
+                    state.afterUrl = URL.createObjectURL(state.afterBlob);
+                    state.afterName = "dashboard-bulk_sanitized.zip";
+
+                    const empty = $("#viewer-empty");
+                    const compare = $("#viewer-compare");
+                    const generic = $("#viewer-generic");
+                    const inner = $("#viewer-generic-inner");
+                    if (empty) empty.hidden = true;
+                    if (compare) compare.hidden = true;
+                    if (generic) generic.hidden = false;
+                    if (inner) {
+                        inner.innerHTML = `<p style="margin:0; color:var(--ink-500); font-size:15px;">Bulk sanitize complete for ${files.length} upload(s)${hasZip ? " including ZIP extraction" : ""}. Download the ZIP result below.</p>`;
+                    }
+
+                    const block = $("#results");
+                    if (block) block.hidden = false;
+                    if ($("#stat-total")) $("#stat-total").textContent = "-";
+                    if ($("#stat-faces")) $("#stat-faces").textContent = "-";
+                    if ($("#stat-numbers")) $("#stat-numbers").textContent = "-";
+                    if ($("#stat-pii")) $("#stat-pii").textContent = "-";
+                    const dl = $("#download");
+                    if (dl) {
+                        dl.href = state.afterUrl;
+                        dl.download = state.afterName;
+                    }
+                    setStatus("Done. Bulk ZIP is ready.");
+                } else {
+                    const endpoint = state.category === "video" ? "/sanitize/video" : "/sanitize";
+                    const form = new FormData();
+                    form.append("file", state.file);
+                    form.append("options", JSON.stringify(buildOptions()));
+
+                    const res = await xhrFormRequest(endpoint, form, {
+                        responseType: "blob",
+                        onProgress: (pct) => setStatus(`Uploading... ${pct}%`, { busy: true }),
+                    });
+                    setStatus("Processing uploaded file...", { busy: true });
+                    const summaryHeader = res.getHeader("X-Sanitizer-Summary");
+                    const summary = summaryHeader ? JSON.parse(summaryHeader) : null;
+                    const blob = res.data;
+                    await handleResult(blob, summary);
+                    setStatus("Done. Compare the result below.");
+                }
             } catch (e) {
                 setStatus(e.message || "Sanitize failed.", { error: true });
             } finally {
@@ -530,13 +797,13 @@
             fi.value = "";
         });
         fi.addEventListener("change", (e) => {
-            const f = e.target && e.target.files ? e.target.files[0] : null;
-            if (f) setFile(f);
+            const files = e.target && e.target.files ? e.target.files : null;
+            if (files && files.length) addFiles(files);
         });
         ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("is-drag"); }));
         ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("is-drag"); }));
         dz.addEventListener("drop", (e) => {
-            if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         });
 
         const rm = $("#file-remove");
@@ -856,7 +1123,7 @@
         // Page-safe: only run on the intelligence page that has these elements.
         if (!dz && !grid) return;
 
-        const libState = { file: null };
+        const libState = { files: [], zipFiles: [] };
 
         function setStatus(sel, msg, { busy = false, error = false } = {}) {
             const el = $(sel);
@@ -876,6 +1143,67 @@
         function kindBadge(kind) {
             const k = (kind || "other").toUpperCase().slice(0, 4);
             return `<span class="kind-pill kind-pill--${kind || "other"}">${k}</span>`;
+        }
+
+        function fileExt(name) {
+            return ((name || "").split(".").pop() || "").toLowerCase();
+        }
+
+        async function renderLibraryPreview(folder, item) {
+            const panel = $("#folder-preview");
+            const title = $("#folder-preview-title");
+            const body = $("#folder-preview-body");
+            if (!panel || !title || !body) return;
+
+            const fileUrl = `/library/${encodeURIComponent(folder)}/file/${encodeURIComponent(item.stored_name)}`;
+            const ext = fileExt(item.stored_name || item.display_name || "");
+            title.textContent = `Preview: ${item.display_name || item.stored_name}`;
+            panel.hidden = false;
+
+            if (item.kind === "image") {
+                body.innerHTML = `<img src="${fileUrl}" alt="${item.display_name || item.stored_name}" style="max-width:100%; height:auto; border-radius:8px;" />`;
+                return;
+            }
+
+            if (item.kind === "pdf") {
+                body.innerHTML = `<iframe class="library-preview__iframe" src="${fileUrl}" title="PDF preview"></iframe>`;
+                return;
+            }
+
+            if (item.kind === "text") {
+                body.innerHTML = `<div class="status is-busy">Loading text preview...</div>`;
+                try {
+                    const r = await fetch(fileUrl);
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const text = await r.text();
+                    const escaped = (text || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+                    body.innerHTML = `<pre class="library-preview__text">${escaped}</pre>`;
+                } catch {
+                    body.innerHTML = `<p>Unable to preview this text file. <a href="${fileUrl}" target="_blank" rel="noopener">Open file</a></p>`;
+                }
+                return;
+            }
+
+            if (item.kind === "doc" && ext === "docx") {
+                body.innerHTML = `<div class="status is-busy">Loading document preview...</div>`;
+                if (!(window.mammoth && typeof window.mammoth.convertToHtml === "function")) {
+                    body.innerHTML = `<p>DOCX preview is unavailable. <a href="${fileUrl}" target="_blank" rel="noopener">Open file</a></p>`;
+                    return;
+                }
+                try {
+                    const r = await fetch(fileUrl);
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const blob = await r.blob();
+                    const buf = await blob.arrayBuffer();
+                    const out = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+                    body.innerHTML = `<div class="doc-pane__content">${out.value || "<p>No content.</p>"}</div>`;
+                } catch {
+                    body.innerHTML = `<p>Unable to preview this DOCX file. <a href="${fileUrl}" target="_blank" rel="noopener">Open file</a></p>`;
+                }
+                return;
+            }
+
+            body.innerHTML = `<p>Inline preview is not available for this file type. <a href="${fileUrl}" target="_blank" rel="noopener">Open file</a></p>`;
         }
 
         function renderFolders(payload) {
@@ -966,7 +1294,7 @@
             items.innerHTML = payload.items.map((it) => {
                 const tags = (it.tags || []).map((t) => `<span class="tag-pill">${t}</span>`).join("");
                 return `
-                <article class="library-item" data-stored="${it.stored_name}">
+                <article class="library-item" data-stored="${it.stored_name}" data-kind="${it.kind || "other"}" data-display="${(it.display_name || it.stored_name)}">
                     <div class="library-item__icon">${kindBadge(it.kind)}</div>
                     <div class="library-item__body">
                         <h4 class="library-item__name">${it.display_name}</h4>
@@ -980,6 +1308,7 @@
                     </div>
                     <div class="library-item__actions">
                         <a class="btn btn--ghost btn--small" href="/library/${encodeURIComponent(folder)}/file/${encodeURIComponent(it.stored_name)}" target="_blank">Open</a>
+                        <button class="btn btn--ghost btn--small" data-action="view" type="button">View</button>
                         <button class="btn btn--ghost btn--small" data-action="rename" type="button">Rename</button>
                         <button class="btn btn--ghost btn--small" data-action="delete" type="button">Delete</button>
                     </div>
@@ -1003,49 +1332,131 @@
                     await fetch(`/library/${encodeURIComponent(folder)}/rename`, { method: "POST", body: form });
                     openFolder(folder);
                 });
+                row.querySelector('[data-action="view"]').addEventListener("click", async () => {
+                    const meta = {
+                        stored_name: stored,
+                        display_name: row.dataset.display || stored,
+                        kind: row.dataset.kind || "other",
+                    };
+                    await renderLibraryPreview(folder, meta);
+                });
             });
         }
 
-        function setLibFile(f) {
-            libState.file = f || null;
+        function refreshLibMeta() {
             const meta = $("#lib-file-meta");
             const metaName = $("#lib-file-meta-name");
-            if (meta && metaName) {
-                meta.hidden = !f;
-                if (f) metaName.textContent = `${f.name} · ${fmtBytes(f.size)}`;
+            const total = libState.files.length + libState.zipFiles.length;
+            if (!meta || !metaName) return;
+            meta.hidden = total === 0;
+            if (!total) return;
+
+            const size = [...libState.files, ...libState.zipFiles].reduce((s, f) => s + (f.size || 0), 0);
+            metaName.textContent = `${total} upload(s) · ${libState.files.length} file(s) + ${libState.zipFiles.length} zip(s) · ${fmtBytes(size)}`;
+        }
+
+        function renderLibUploadList() {
+            const list = $("#lib-upload-list");
+            if (!list) return;
+            const total = [...libState.files, ...libState.zipFiles];
+            if (!total.length) {
+                list.hidden = true;
+                list.innerHTML = "";
+                return;
             }
+
+            list.hidden = false;
+            const chips = [];
+            libState.files.forEach((f, idx) => {
+                chips.push(`<button type="button" class="upload-chip" data-lib-file-idx="${idx}"><span class="upload-chip__name">${f.name}</span><span class="upload-chip__size">${fmtBytes(f.size)}</span><span class="upload-chip__close" data-lib-file-remove="${idx}">×</span></button>`);
+            });
+            libState.zipFiles.forEach((f, idx) => {
+                chips.push(`<button type="button" class="upload-chip is-active" data-lib-zip-idx="${idx}"><span class="upload-chip__name">${f.name}</span><span class="upload-chip__size">ZIP · ${fmtBytes(f.size)}</span><span class="upload-chip__close" data-lib-zip-remove="${idx}">×</span></button>`);
+            });
+            list.innerHTML = chips.join("");
+
+            list.querySelectorAll("[data-lib-file-remove]").forEach((btn) => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const idx = Number(btn.getAttribute("data-lib-file-remove"));
+                    if (Number.isNaN(idx)) return;
+                    libState.files.splice(idx, 1);
+                    refreshLibMeta();
+                    renderLibUploadList();
+                });
+            });
+
+            list.querySelectorAll("[data-lib-zip-remove]").forEach((btn) => {
+                btn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const idx = Number(btn.getAttribute("data-lib-zip-remove"));
+                    if (Number.isNaN(idx)) return;
+                    libState.zipFiles.splice(idx, 1);
+                    refreshLibMeta();
+                    renderLibUploadList();
+                });
+            });
+        }
+
+        function addLibFiles(fileLike) {
+            const incoming = Array.from(fileLike || []);
+            if (!incoming.length) return;
+
+            incoming.forEach((f) => {
+                const isZip = (f.name || "").toLowerCase().endsWith(".zip");
+                if (isZip) libState.zipFiles.push(f);
+                else libState.files.push(f);
+            });
+
+            refreshLibMeta();
+            renderLibUploadList();
+
             const nameInput = $("#save-name");
-            if (nameInput && f && !nameInput.value) {
-                nameInput.value = f.name.replace(/\.[^.]+$/, "");
+            if (nameInput && incoming[0] && !nameInput.value) {
+                nameInput.value = incoming[0].name.replace(/\.[^.]+$/, "");
             }
         }
 
         async function saveToLibrary() {
-            if (!libState.file) {
-                setStatus("#lib-save-status", "Pick or paste a file first.", { error: true });
+            const totalUploads = libState.files.length + libState.zipFiles.length;
+            if (!totalUploads) {
+                setStatus("#lib-save-status", "Pick files or ZIP archives first.", { error: true });
                 return;
             }
             const folder = ($("#save-folder") && $("#save-folder").value.trim()) || "default";
-            const name = ($("#save-name") && $("#save-name").value.trim()) || "";
             const tags = ($("#save-tags") && $("#save-tags").value.trim()) || "";
+            const hadDirectFiles = libState.files.length > 0;
             const form = new FormData();
-            form.append("file", libState.file);
+            libState.files.forEach((f) => form.append("files", f));
+            libState.zipFiles.forEach((z) => form.append("zip_files", z));
             form.append("folder", folder);
-            form.append("name", name);
             form.append("tags", tags);
 
             const btn = $("#lib-save-btn");
             if (btn) btn.disabled = true;
             setStatus("#lib-save-status", "Uploading... 0%", { busy: true });
             try {
-                const r = await xhrFormRequest("/library/save", form, {
+                const r = await xhrFormRequest("/library/save-bulk", form, {
                     responseType: "json",
                     onProgress: (pct) => setStatus("#lib-save-status", `Uploading... ${pct}%`, { busy: true }),
                 });
                 const payload = r.data;
-                setStatus("#lib-save-status", `Saved ${payload.item.display_name} in folder ${payload.folder}.`);
+                const zipFolderTxt = Object.keys(payload.zip_folders || {}).length
+                    ? ` ZIP extracted into ${Object.keys(payload.zip_folders).join(", ")}.`
+                    : "";
+                setStatus("#lib-save-status", `Saved ${payload.saved_count} item(s) into ${payload.base_folder}.${zipFolderTxt}`);
+                libState.files = [];
+                libState.zipFiles = [];
+                refreshLibMeta();
+                renderLibUploadList();
                 loadFolders();
-                openFolder(payload.folder);
+                const zipFolders = Object.keys(payload.zip_folders || {});
+                const openTarget = zipFolders.length && !hadDirectFiles
+                    ? zipFolders[0]
+                    : payload.base_folder;
+                openFolder(openTarget);
             } catch (e) {
                 setStatus("#lib-save-status", e.message || "Save failed.", { error: true });
             } finally {
@@ -1126,15 +1537,15 @@
             if (fi) fi.addEventListener("click", () => { fi.value = ""; });
             if (fi) {
                 fi.addEventListener("change", (e) => {
-                    const f = e.target && e.target.files ? e.target.files[0] : null;
-                    if (f) setLibFile(f);
+                    const files = e.target && e.target.files ? e.target.files : null;
+                    if (files && files.length) addLibFiles(files);
                 });
             }
             ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("is-drag"); }));
             ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("is-drag"); }));
             dz.addEventListener("drop", (e) => {
-                const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-                if (f) setLibFile(f);
+                const files = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
+                if (files && files.length) addLibFiles(files);
             });
         }
 
@@ -1145,7 +1556,7 @@
             for (const it of items) {
                 if (it.kind === "file") {
                     const f = it.getAsFile();
-                    if (f) { setLibFile(f); return; }
+                    if (f) addLibFiles([f]);
                 }
             }
         });
@@ -1176,6 +1587,14 @@
         if (folderClose) folderClose.addEventListener("click", () => {
             const sect = $("#folder-detail");
             if (sect) sect.hidden = true;
+        });
+
+        const previewClose = $("#folder-preview-close");
+        if (previewClose) previewClose.addEventListener("click", () => {
+            const panel = $("#folder-preview");
+            const body = $("#folder-preview-body");
+            if (panel) panel.hidden = true;
+            if (body) body.innerHTML = "";
         });
 
         const folderExport = $("#folder-export");

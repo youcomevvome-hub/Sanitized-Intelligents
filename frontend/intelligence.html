@@ -77,10 +77,10 @@
             <article class="card card--drop">
                 <header class="card__head">
                     <h2 class="card__title">Add to library</h2>
-                    <p class="card__sub">Image, PDF, DOCX, Word, text — drop, click or paste.</p>
+                    <p class="card__sub">Bulk upload files or ZIP archives. ZIPs are extracted into their own folder.</p>
                 </header>
                 <label class="dropzone" id="lib-dropzone">
-                    <input type="file" id="lib-file" hidden accept=".jpg,.jpeg,.png,.tif,.tiff,.bmp,.webp,.pdf,.doc,.docx,.txt,.csv,.md,.json" />
+                    <input type="file" id="lib-file" hidden multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.bmp,.webp,.pdf,.doc,.docx,.txt,.csv,.md,.json,.zip" />
                     <div class="dropzone__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -89,11 +89,12 @@
                         </svg>
                     </div>
                     <div class="dropzone__title">Drop or click to browse</div>
-                    <div class="dropzone__hint">Or paste with Ctrl+V</div>
+                    <div class="dropzone__hint">Or paste with Ctrl+V. Multiple files supported.</div>
                 </label>
                 <div class="file-meta" id="lib-file-meta" hidden>
                     <div class="file-meta__name" id="lib-file-meta-name"></div>
                 </div>
+                <div class="upload-list" id="lib-upload-list" hidden></div>
             </article>
 
             <article class="card card--options">
@@ -113,7 +114,7 @@
                     <label class="opt-label" for="save-tags">Tags (comma separated)</label>
                     <input id="save-tags" class="text-input" placeholder="invoice, finance, pii" />
                 </div>
-                <button id="lib-save-btn" class="btn btn--primary btn--block" type="button">Save to library</button>
+                <button id="lib-save-btn" class="btn btn--primary btn--block" type="button">Save uploads to library</button>
                 <div id="lib-save-status" class="status" hidden></div>
             </article>
         </div>
@@ -176,6 +177,13 @@
                     </div>
                 </header>
                 <div id="folder-items" class="library-items"></div>
+                <div id="folder-preview" class="library-preview" hidden>
+                    <div class="library-preview__head">
+                        <h3 id="folder-preview-title" class="library-preview__title">Preview</h3>
+                        <button id="folder-preview-close" class="btn btn--ghost btn--small" type="button">Close preview</button>
+                    </div>
+                    <div id="folder-preview-body" class="library-preview__body"></div>
+                </div>
             </div>
         </div>
     </section>
@@ -203,6 +211,7 @@
         </div>
     </footer>
 
-    <script src="/static/app.js?v=20260513"></script>
+    <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
+    <script src="/static/app.js?v=20260513g"></script>
 </body>
 </html>

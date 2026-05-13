@@ -30,9 +30,20 @@ _NUMBER_RE = re.compile(r"\d{2,}")
 REDACTION_TOKEN = "[REDACTED]"
 
 
+def _apply_custom_replacements(text: str, replacements: dict[str, str]) -> str:
+    out = text
+    for src, dst in (replacements or {}).items():
+        if not src:
+            continue
+        out = re.sub(re.escape(src), dst or "", out, flags=re.IGNORECASE)
+    return out
+
+
 def _redact_text(text: str, pii: PIITextAnalyzer, request: SanitizeRequest) -> tuple[str, List[Detection]]:
     if not text:
         return text, []
+    text = _apply_custom_replacements(text, request.custom_replacements)
+    replacement_token = (request.replacement_text or REDACTION_TOKEN).strip() or REDACTION_TOKEN
     detections: List[Detection] = []
     # Collect spans
     spans: List[tuple[int, int, str]] = []
@@ -62,7 +73,7 @@ def _redact_text(text: str, pii: PIITextAnalyzer, request: SanitizeRequest) -> t
     cursor = 0
     for s, e, lbl in merged:
         out_parts.append(text[cursor:s])
-        out_parts.append(REDACTION_TOKEN)
+        out_parts.append(replacement_token)
         detections.append(
             Detection(
                 kind=DetectionKind.PII if lbl != "NUMBER" else DetectionKind.NUMBER,

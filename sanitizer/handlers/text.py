@@ -12,6 +12,15 @@ _NUMBER_RE = re.compile(r"\d{2,}")
 REDACTION_TOKEN = "[REDACTED]"
 
 
+def _apply_custom_replacements(text: str, replacements: dict[str, str]) -> str:
+    out = text
+    for src, dst in (replacements or {}).items():
+        if not src:
+            continue
+        out = re.sub(re.escape(src), dst or "", out, flags=re.IGNORECASE)
+    return out
+
+
 def sanitize_text(
     input_path: str | Path,
     output_path: str | Path,
@@ -23,6 +32,8 @@ def sanitize_text(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     text = input_path.read_text(encoding="utf-8", errors="replace")
+    text = _apply_custom_replacements(text, request.custom_replacements)
+    replacement_token = (request.replacement_text or REDACTION_TOKEN).strip() or REDACTION_TOKEN
 
     spans: List[tuple[int, int, str]] = []
     if request.redact_pii:
@@ -46,7 +57,7 @@ def sanitize_text(
     cursor = 0
     for s, e, lbl in merged:
         out_parts.append(text[cursor:s])
-        out_parts.append(REDACTION_TOKEN)
+        out_parts.append(replacement_token)
         detections.append(
             Detection(
                 kind=DetectionKind.NUMBER if lbl == "NUMBER" else DetectionKind.PII,

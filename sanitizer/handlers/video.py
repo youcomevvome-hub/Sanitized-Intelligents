@@ -21,6 +21,7 @@ Modes
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
@@ -162,6 +163,102 @@ def _pick_person_box_for_face(
     return best_box
 
 
+def _nms_detections(dets: list[Detection], iou_thresh: float = 0.45) -> list[Detection]:
+    if not dets:
+        return []
+    ordered = sorted(dets, key=lambda d: d.confidence, reverse=True)
+    kept: list[Detection] = []
+    for d in ordered:
+        if all(_bbox_iou(d.bbox, k.bbox) < iou_thresh for k in kept):
+            kept.append(d)
+    return kept
+
+
+def _rotate_image_keep_size(image: np.ndarray, angle_deg: float) -> tuple[np.ndarray, np.ndarray]:
+    h, w = image.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    m = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
+    rotated = cv2.warpAffine(
+        image,
+        m,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
+    return rotated, m
+
+
+def _map_bbox_back_from_rotated(
+    bbox: tuple[int, int, int, int],
+    inv_m: np.ndarray,
+    frame_w: int,
+    frame_h: int,
+) -> tuple[int, int, int, int]:
+    x1, y1, x2, y2 = bbox
+    pts = np.array(
+        [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
+        dtype=np.float32,
+    ).reshape(-1, 1, 2)
+    mapped = cv2.transform(pts, inv_m).reshape(-1, 2)
+    mx1 = int(np.min(mapped[:, 0]))
+    my1 = int(np.min(mapped[:, 1]))
+    mx2 = int(np.max(mapped[:, 0]))
+    my2 = int(np.max(mapped[:, 1]))
+    return _clip_bbox((mx1, my1, mx2, my2), frame_w, frame_h)
+
+
+def _detect_faces_robust(
+    face_det: FaceDetector,
+    frame: np.ndarray,
+    frame_idx: int,
+    orientation_retry_every: int = 5,
+) -> list[Detection]:
+    """Detect faces with a cheap oriented-fallback for tilted head/frame cases.
+
+    To avoid major slowdown, rotated passes run only on sparse frames and only
+    when the base detector finds no faces.
+    """
+    h, w = frame.shape[:2]
+    try:
+        base = face_det.detect(frame)
+    except Exception as e:
+        logger.error(f"Face detection failed on frame {frame_idx}: {e}")
+        base = []
+    if base:
+        return base
+    if frame_idx % max(1, orientation_retry_every) != 0:
+        return []
+
+    augmented: list[Detection] = []
+    for ang in (20.0, -20.0, 35.0, -35.0):
+        try:
+            rotated, m = _rotate_image_keep_size(frame, ang)
+            inv_m = cv2.invertAffineTransform(m)
+            rdets = face_det.detect(rotated)
+            for d in rdets:
+                mapped_bbox = _map_bbox_back_from_rotated(d.bbox, inv_m, w, h)
+                x1, y1, x2, y2 = mapped_bbox
+                if (x2 - x1) * (y2 - y1) < 225:
+                    continue
+                augmented.append(
+                    Detection(
+                        kind=d.kind,
+                        bbox=mapped_bbox,
+                        confidence=d.confidence,
+                        label=d.label,
+                        page=d.page,
+                        frame=d.frame,
+                        identity=d.identity,
+                        extra=d.extra,
+                    )
+                )
+        except Exception:
+            # Oriented fallback is best-effort only.
+            continue
+    return _nms_detections(augmented)
+
+
 def sanitize_video(
     input_path: str | Path,
     output_path: str | Path,
@@ -199,7 +296,9 @@ def sanitize_video(
     mode = MaskMode(request.mask_mode.value if request.mask_mode else settings.mask_mode)
     kernel = request.blur_kernel or settings.blur_kernel
     video_region_mode = (request.video_redaction_region or "face_only").lower()
-    if video_region_mode not in {"face_only", "whole_body", "body_no_face"}:
+    if video_region_mode == "whole_body":
+        video_region_mode = "face_and_body"
+    if video_region_mode not in {"face_only", "face_and_body", "body_no_face"}:
         video_region_mode = "face_only"
 
     all_detections: List[Detection] = []
@@ -211,6 +310,10 @@ def sanitize_video(
     gallery = gallery or IdentityGallery()
     tracks: Dict[str, tuple[float, float]] = {}
     next_track_id = 1
+    person_boxes_cache: list[tuple[int, int, int, int]] = []
+    person_boxes_cache_frame = -1
+    person_det_interval = 6
+    start_time = perf_counter()
 
     def assign_track_id(d: Detection) -> str:
         nonlocal next_track_id
@@ -240,20 +343,24 @@ def sanitize_video(
 
         # ---- Faces (every frame) ----
         if request.redact_faces:
-            try:
-                face_dets = face_det.detect(frame)
-            except Exception as e:
-                logger.error(f"Face detection failed on frame {frame_idx}: {e}")
-                face_dets = []
+            face_dets = _detect_faces_robust(face_det, frame, frame_idx)
             # Stable ordering helps deterministic IDs across frames.
             face_dets.sort(key=lambda det: (det.bbox[0], det.bbox[1]))
             person_boxes: list[tuple[int, int, int, int]] = []
             if video_region_mode != "face_only" and face_dets and person_det is not None:
-                try:
-                    person_dets = person_det.detect(frame)
-                    person_boxes = [tuple(map(int, d.bbox)) for d in person_dets if d.label == "person"]
-                except Exception as e:
-                    logger.warning(f"Person detection failed on frame {frame_idx}; using fallback body boxes: {e}")
+                should_refresh_person = (
+                    person_boxes_cache_frame < 0
+                    or (frame_idx - person_boxes_cache_frame) >= person_det_interval
+                )
+                if should_refresh_person:
+                    try:
+                        person_dets = person_det.detect(frame)
+                        person_boxes_cache = [tuple(map(int, d.bbox)) for d in person_dets if d.label == "person"]
+                        person_boxes_cache_frame = frame_idx
+                    except Exception as e:
+                        logger.warning(f"Person detection failed on frame {frame_idx}; using fallback body boxes: {e}")
+                        person_boxes_cache = []
+                person_boxes = person_boxes_cache
 
             for d in face_dets:
                 emb = d.extra.get("embedding") if d.extra else None
@@ -282,6 +389,8 @@ def sanitize_video(
                                 identity=d.identity,
                             )
                         )
+                        if video_region_mode == "face_and_body":
+                            frame_dets.append(d)
                         if video_region_mode == "body_no_face":
                             face_restore_boxes.append(_clip_bbox(d.bbox, width, height))
 
@@ -327,5 +436,6 @@ def sanitize_video(
             "height": height,
             "known_identities": gallery.known,
             "person_detector": "yolo" if person_det is not None else "fallback",
+            "processing_fps": round(frame_idx / max(1e-6, (perf_counter() - start_time)), 2),
         },
     )
