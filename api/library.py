@@ -443,6 +443,50 @@ def delete_item(folder: str, stored_name: str) -> JSONResponse:
     _save_meta(folder, meta)
     return JSONResponse({"folder": folder, "stored_name": stored_name, "deleted": True})
 
+    
+@router.post("/delete-bulk")
+def delete_bulk_items(
+    folder: str = Form(...),
+    stored_names: List[str] = Form(...),
+) -> JSONResponse:
+    fld = _safe(folder, "default")
+    fp = _folder_path(fld)
+    if not fp.exists():
+        raise HTTPException(404, f"Folder not found: {fld}")
+
+    meta = _load_meta(fld)
+    items = meta.setdefault("items", {})
+
+    deleted: List[str] = []
+    skipped: List[str] = []
+
+    for raw in stored_names:
+        stored = _safe(raw, "item")
+        if not stored or stored == "_meta.json":
+            skipped.append(raw)
+            continue
+
+        item_path = fp / stored
+        if item_path.exists() and item_path.is_file():
+            item_path.unlink(missing_ok=True)
+            items.pop(stored, None)
+            deleted.append(stored)
+        else:
+            skipped.append(stored)
+
+    meta["folder"] = fld
+    _save_meta(fld, meta)
+
+    return JSONResponse(
+        {
+            "folder": fld,
+            "requested": len(stored_names),
+            "deleted_count": len(deleted),
+            "deleted": deleted,
+            "skipped": skipped,
+        }
+    )
+
 
 @router.post("/{folder}/rename")
 def rename_item(
@@ -457,6 +501,82 @@ def rename_item(
     item["display_name"] = display_name.strip() or item["display_name"]
     _save_meta(folder, meta)
     return JSONResponse({"folder": folder, "item": item})
+
+
+@router.post("/move-bulk")
+def move_bulk_items(
+    source_folder: str = Form(...),
+    target_folder: str = Form(...),
+    stored_names: List[str] = Form(...),
+) -> JSONResponse:
+    src_folder = _safe(source_folder, "default")
+    dst_folder = _safe(target_folder, "default")
+    if src_folder == dst_folder:
+        raise HTTPException(400, "Source and target folders must differ")
+
+    src_path = _folder_path(src_folder)
+    if not src_path.exists():
+        raise HTTPException(404, f"Source folder not found: {src_folder}")
+
+    dst_path = _folder_path(dst_folder)
+    dst_path.mkdir(parents=True, exist_ok=True)
+
+    src_meta = _load_meta(src_folder)
+    dst_meta = _load_meta(dst_folder)
+    src_items = src_meta.setdefault("items", {})
+    dst_items = dst_meta.setdefault("items", {})
+
+    moved: List[Dict[str, str]] = []
+    skipped: List[str] = []
+
+    for raw_name in stored_names:
+        stored_name = _safe(raw_name, "item")
+        if not stored_name or stored_name == "_meta.json":
+            skipped.append(raw_name)
+            continue
+
+        src_file = src_path / stored_name
+        if not src_file.exists() or not src_file.is_file():
+            skipped.append(stored_name)
+            continue
+
+        target = _unique_target(dst_folder, stored_name)
+        src_file.replace(target)
+
+        item = src_items.pop(stored_name, None)
+        if item is not None:
+            item["stored_name"] = target.name
+            dst_items[target.name] = item
+        else:
+            dst_items[target.name] = {
+                "stored_name": target.name,
+                "original_name": stored_name,
+                "display_name": Path(stored_name).stem,
+                "kind": _ext_kind(target.name),
+                "size": target.stat().st_size,
+                "created": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                "tags": [],
+                "sha256_prefix": _file_hash(target),
+                "has_signature": _detect_signature(target),
+            }
+
+        moved.append({"from": stored_name, "to": target.name})
+
+    src_meta["folder"] = src_folder
+    dst_meta["folder"] = dst_folder
+    _save_meta(src_folder, src_meta)
+    _save_meta(dst_folder, dst_meta)
+
+    return JSONResponse(
+        {
+            "source_folder": src_folder,
+            "target_folder": dst_folder,
+            "requested": len(stored_names),
+            "moved_count": len(moved),
+            "moved": moved,
+            "skipped": skipped,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +686,9 @@ def export_folder(folder: str) -> FileResponse:
         raise HTTPException(404, "Folder not found")
     zip_path = LIBRARY_ROOT / f".{folder}_{uuid.uuid4().hex}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # Keep folder structure even when there are no exportable files.
+        zf.writestr(f"{folder}/", "")
         for f in fp.glob("*"):
-            if f.is_file():
+            if f.is_file() and f.name != "_meta.json":
                 zf.write(f, arcname=f"{folder}/{f.name}")
     return FileResponse(path=zip_path, filename=f"{folder}.zip")

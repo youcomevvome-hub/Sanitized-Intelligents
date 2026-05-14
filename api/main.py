@@ -545,9 +545,10 @@ async def sanitize_bulk(
 
     zip_path = workdir / f"{safe_group}_sanitized.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # Keep a folder entry so empty result sets can still be downloaded as a ZIP.
+        zf.writestr(f"{safe_group}/", "")
         for fp in outdir.glob("*"):
             zf.write(fp, arcname=f"{safe_group}/{fp.name}")
-        zf.writestr(f"{safe_group}/summary.json", json.dumps(summary, indent=2))
 
     return FileResponse(
         path=zip_path,

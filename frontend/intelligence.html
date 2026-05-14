@@ -145,6 +145,14 @@
                     <button id="lib-search-btn" class="btn btn--primary" type="button">Search</button>
                 </div>
                 <div id="lib-search-status" class="status" hidden></div>
+                <div class="section-actions">
+                    <input id="lib-search-move-target" class="text-input" placeholder="Move selected results to folder" />
+                    <button id="lib-search-select-all" class="btn btn--ghost" type="button">Select all</button>
+                    <button id="lib-search-select-none" class="btn btn--ghost" type="button">Clear</button>
+                    <button id="lib-search-move-selected" class="btn btn--primary" type="button">Move selected</button>
+                    <button id="lib-search-delete-selected" class="btn btn--ghost" type="button">Delete selected</button>
+                </div>
+                <div id="lib-search-move-status" class="status" hidden></div>
                 <div id="lib-search-results" class="search-results"></div>
             </div>
         </div>
@@ -172,10 +180,16 @@
                             <option value="doc">Word</option>
                             <option value="text">Text</option>
                         </select>
+                        <input id="folder-move-target" class="text-input" placeholder="Move selected to folder" />
+                        <button id="folder-select-all" class="btn btn--ghost" type="button">Select all</button>
+                        <button id="folder-select-none" class="btn btn--ghost" type="button">Clear</button>
+                        <button id="folder-move-selected" class="btn btn--primary" type="button">Move selected</button>
+                        <button id="folder-delete-selected" class="btn btn--ghost" type="button">Delete selected</button>
                         <button id="folder-export" class="btn btn--ghost" type="button">Export ZIP</button>
                         <button id="folder-close" class="btn btn--ghost" type="button">Close</button>
                     </div>
                 </header>
+                <div id="folder-bulk-status" class="status" hidden></div>
                 <div id="folder-items" class="library-items"></div>
                 <div id="folder-preview" class="library-preview" hidden>
                     <div class="library-preview__head">
@@ -212,6 +226,6 @@
     </footer>
 
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
-    <script src="/static/app.js?v=20260513g"></script>
+    <script src="/static/app.js?v=20260514c"></script>
 </body>
 </html>

@@ -1780,7 +1780,7 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
     flex-wrap: wrap;
 }
 .section-title { font-size: 26px; font-weight: 800; color: var(--green-900); margin: 0; }
-.section-sub   { color: rgba(18, 52, 38, 0.65); margin: 4px 0 0; }
+.section-sub   { color: var(--ink-700); margin: 4px 0 0; }
 .section-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 .text-input--inline { width: 220px; }
@@ -1794,7 +1794,7 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
 }
 .folder-card {
     background: var(--white);
-    border: 1px solid rgba(18, 52, 38, 0.08);
+    border: 1px solid var(--line);
     border-radius: 16px;
     padding: 16px;
     cursor: pointer;
@@ -1817,7 +1817,7 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
 .folder-card__name { font-size: 16px; font-weight: 700; color: var(--green-900); margin: 0; word-break: break-all; }
 .folder-card__meta {
     display: flex; justify-content: space-between;
-    font-size: 12px; color: rgba(18, 52, 38, 0.6);
+    font-size: 12px; color: var(--ink-700);
     margin-bottom: 10px;
 }
 .folder-card__kinds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; min-height: 22px; }
@@ -1840,14 +1840,14 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
 .kind-pill--text  { background: rgba(18, 52, 38, 0.12); color: var(--green-900); }
 .kind-pill--video { background: rgba(120, 60, 180, 0.14); color: #4b1f7a; }
 .kind-pill--sig   { background: rgba(212, 137, 38, 0.18); color: #7a4a0e; }
-.kind-pill--other { background: rgba(18, 52, 38, 0.08); color: rgba(18, 52, 38, 0.7); }
+.kind-pill--other { background: rgba(18, 52, 38, 0.08); color: var(--ink-700); }
 .tag-pill {
     display: inline-block;
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 6px;
     background: rgba(18, 52, 38, 0.06);
-    color: rgba(18, 52, 38, 0.7);
+    color: var(--ink-700);
     margin-right: 4px;
 }
 
@@ -1855,19 +1855,26 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
 .library-items { display: flex; flex-direction: column; gap: 10px; }
 .library-item {
     display: grid;
-    grid-template-columns: 64px 1fr auto;
+    grid-template-columns: 34px 64px 1fr auto;
     gap: 14px;
     align-items: center;
     background: var(--white);
-    border: 1px solid rgba(18, 52, 38, 0.07);
+    border: 1px solid var(--line);
     border-radius: 12px;
     padding: 12px 14px;
     transition: border-color .18s ease, transform .18s ease;
 }
 .library-item:hover { border-color: rgba(45, 122, 85, 0.3); transform: translateX(2px); }
+.library-item.is-selected {
+    border-color: rgba(45, 122, 85, 0.42);
+    box-shadow: 0 0 0 3px rgba(45, 122, 85, 0.11);
+    background: rgba(214, 248, 228, 0.42);
+}
+.library-item__check { display: flex; align-items: center; justify-content: center; }
+.library-item__check input { width: 16px; height: 16px; accent-color: var(--green-700); }
 .library-item__icon { display: grid; place-items: center; }
 .library-item__name { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--green-900); word-break: break-all; }
-.library-item__meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: rgba(18, 52, 38, 0.65); margin-bottom: 4px; }
+.library-item__meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--ink-700); margin-bottom: 4px; }
 .library-item__tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .library-item__actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -1933,10 +1940,31 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
     padding: 24px;
     border-radius: 12px;
     background: rgba(18, 52, 38, 0.04);
-    color: rgba(18, 52, 38, 0.65);
+    color: var(--ink-700);
     text-align: center;
 }
 .empty-state--error { background: rgba(196, 40, 40, 0.08); color: #8a1b1b; }
+
+html[data-theme="dark"] .folder-card {
+    box-shadow: 0 4px 14px -10px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="dark"] .folder-card__meta,
+html[data-theme="dark"] .section-sub,
+html[data-theme="dark"] .library-item__meta,
+html[data-theme="dark"] .tag-pill,
+html[data-theme="dark"] .empty-state,
+html[data-theme="dark"] .kind-pill--other {
+    color: var(--ink-900);
+}
+
+html[data-theme="dark"] .tag-pill {
+    background: rgba(184, 219, 201, 0.14);
+}
+
+html[data-theme="dark"] .empty-state {
+    background: rgba(184, 219, 201, 0.08);
+}
 
 /* card row-head variant */
 .card__head--row { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
@@ -1952,6 +1980,7 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
     .intel-hero { grid-template-columns: 1fr; }
     .intel-hero__art { order: -1; }
     .library-item { grid-template-columns: 1fr; }
+    .library-item__check { justify-content: flex-start; }
     .library-item__actions { justify-content: flex-start; }
     .section-head { align-items: flex-start; }
     .section-actions { width: 100%; }

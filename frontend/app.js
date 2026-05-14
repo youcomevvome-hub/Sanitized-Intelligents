@@ -1118,12 +1118,19 @@
     }
 
     function initLibraryPage() {
-        const dz = $("#lib-dropzone");
+        const dz = $("#lib-dropzone");          
         const grid = $("#folders-grid");
         // Page-safe: only run on the intelligence page that has these elements.
         if (!dz && !grid) return;
 
-        const libState = { files: [], zipFiles: [] };
+        const libState = {
+            files: [],
+            zipFiles: [],
+            currentFolder: "",
+            selectedStored: new Set(),
+            searchMatches: [],
+            selectedSearchKeys: new Set(),
+        };
 
         function setStatus(sel, msg, { busy = false, error = false } = {}) {
             const el = $(sel);
@@ -1143,6 +1150,221 @@
         function kindBadge(kind) {
             const k = (kind || "other").toUpperCase().slice(0, 4);
             return `<span class="kind-pill kind-pill--${kind || "other"}">${k}</span>`;
+        }
+
+        function setFolderBulkStatus(msg, { busy = false, error = false } = {}) {
+            const el = $("#folder-bulk-status");
+            if (!el) return;
+            if (!msg) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.textContent = msg;
+            el.classList.toggle("is-busy", busy);
+            el.classList.toggle("is-error", error);
+        }
+
+        function setSearchMoveStatus(msg, { busy = false, error = false } = {}) {
+            const el = $("#lib-search-move-status");
+            if (!el) return;
+            if (!msg) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.textContent = msg;
+            el.classList.toggle("is-busy", busy);
+            el.classList.toggle("is-error", error);
+        }
+
+        function matchKey(match) {
+            return `${match.folder}::${match.stored_name}`;
+        }
+
+        function setAllSearchSelections(checked) {
+            if (checked) {
+                libState.selectedSearchKeys = new Set(libState.searchMatches.map((m) => matchKey(m)));
+            } else {
+                libState.selectedSearchKeys.clear();
+            }
+            renderLibrarySearch({ matches: libState.searchMatches });
+        }
+
+        async function moveSelectedSearchMatches() {
+            const targetInput = $("#lib-search-move-target");
+            const targetFolder = (targetInput && targetInput.value.trim()) || "";
+            const selected = libState.searchMatches.filter((m) => libState.selectedSearchKeys.has(matchKey(m)));
+
+            if (!selected.length) {
+                setSearchMoveStatus("Select one or more search results first.", { error: true });
+                return;
+            }
+            if (!targetFolder) {
+                setSearchMoveStatus("Enter a target folder name.", { error: true });
+                return;
+            }
+
+            const groups = new Map();
+            selected.forEach((m) => {
+                if (!groups.has(m.folder)) groups.set(m.folder, []);
+                groups.get(m.folder).push(m.stored_name);
+            });
+
+            const moveBtn = $("#lib-search-move-selected");
+            if (moveBtn) moveBtn.disabled = true;
+            setSearchMoveStatus(`Moving ${selected.length} item(s)...`, { busy: true });
+
+            let movedCount = 0;
+            let skippedCount = 0;
+            try {
+                for (const [sourceFolder, storedNames] of groups.entries()) {
+                    if (sourceFolder === targetFolder) {
+                        skippedCount += storedNames.length;
+                        continue;
+                    }
+                    const form = new FormData();
+                    form.append("source_folder", sourceFolder);
+                    form.append("target_folder", targetFolder);
+                    storedNames.forEach((name) => form.append("stored_names", name));
+
+                    const r = await fetch("/library/move-bulk", { method: "POST", body: form });
+                    const payload = await r.json().catch(() => ({}));
+                    if (!r.ok) {
+                        const detail = (payload && (payload.detail || payload.message)) || `Move failed (${r.status})`;
+                        throw new Error(detail);
+                    }
+                    movedCount += Number(payload.moved_count || 0);
+                    skippedCount += Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+                }
+
+                const movedKeys = new Set(selected.map((m) => matchKey(m)));
+                libState.searchMatches = libState.searchMatches.filter((m) => !movedKeys.has(matchKey(m)));
+                libState.selectedSearchKeys.clear();
+                renderLibrarySearch({ matches: libState.searchMatches });
+                await loadFolders();
+                setSearchMoveStatus(`Moved ${movedCount} item(s) to ${targetFolder}.${skippedCount ? ` Skipped ${skippedCount}.` : ""}`);
+            } catch (e) {
+                setSearchMoveStatus(e.message || "Failed to move selected search results.", { error: true });
+            } finally {
+                if (moveBtn) moveBtn.disabled = false;
+            }
+        }
+
+        function refreshFolderSubtitle() {
+            const sub = $("#folder-detail-sub");
+            if (!sub) return;
+            const base = sub.dataset.base || "";
+            const selected = libState.selectedStored.size;
+            sub.textContent = selected ? `${base} · ${selected} selected` : base;
+        }
+
+        function setVisibleSelection(checked) {
+            const rows = document.querySelectorAll("#folder-items .library-item");
+            rows.forEach((row) => {
+                const stored = row.dataset.stored;
+                if (!stored) return;
+                const cb = row.querySelector('input[data-action="select"]');
+                if (cb) cb.checked = !!checked;
+                if (checked) libState.selectedStored.add(stored);
+                else libState.selectedStored.delete(stored);
+                row.classList.toggle("is-selected", !!checked);
+            });
+            refreshFolderSubtitle();
+        }
+
+        async function moveSelectedItems() {
+            const source = (libState.currentFolder || "").trim();
+            const targetInput = $("#folder-move-target");
+            const target = (targetInput && targetInput.value.trim()) || "";
+            const selected = Array.from(libState.selectedStored);
+
+            if (!source) {
+                setFolderBulkStatus("Open a folder first.", { error: true });
+                return;
+            }
+            if (!selected.length) {
+                setFolderBulkStatus("Select one or more items to move.", { error: true });
+                return;
+            }
+            if (!target) {
+                setFolderBulkStatus("Enter a target folder name.", { error: true });
+                return;
+            }
+            if (source === target) {
+                setFolderBulkStatus("Target folder must be different from source.", { error: true });
+                return;
+            }
+
+            const form = new FormData();
+            form.append("source_folder", source);
+            form.append("target_folder", target);
+            selected.forEach((name) => form.append("stored_names", name));
+
+            const moveBtn = $("#folder-move-selected");
+            if (moveBtn) moveBtn.disabled = true;
+            setFolderBulkStatus(`Moving ${selected.length} item(s)...`, { busy: true });
+
+            try {
+                const r = await fetch("/library/move-bulk", { method: "POST", body: form });
+                const payload = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    const detail = (payload && (payload.detail || payload.message)) || `Move failed (${r.status})`;
+                    throw new Error(detail);
+                }
+
+                libState.selectedStored.clear();
+                await loadFolders();
+                await openFolder(source);
+                const skipped = (payload.skipped || []).length;
+                setFolderBulkStatus(
+                    `Moved ${payload.moved_count || 0} item(s) to ${payload.target_folder || target}.${skipped ? ` Skipped ${skipped}.` : ""}`
+                );
+            } catch (e) {
+                setFolderBulkStatus(e.message || "Bulk move failed.", { error: true });
+            } finally {
+                if (moveBtn) moveBtn.disabled = false;
+            }
+        }
+        async function deleteSelectedItems() {
+            const folder = (libState.currentFolder || "").trim();
+            const selected = Array.from(libState.selectedStored);
+
+            if (!folder) {
+                setFolderBulkStatus("Open a folder first.", { error: true });
+                return;
+            }
+            if (!selected.length) {
+                setFolderBulkStatus("Select one or more items to delete.", { error: true });
+                return;
+            }
+            if (!confirm(`Delete ${selected.length} selected item(s) from ${folder}?`)) return;
+
+            const form = new FormData();
+            form.append("folder", folder);
+            selected.forEach((name) => form.append("stored_names", name));
+
+            const btn = $("#folder-delete-selected");
+            if (btn) btn.disabled = true;
+            setFolderBulkStatus(`Deleting ${selected.length} item(s)...`, { busy: true });
+
+            try {
+                const r = await fetch("/library/delete-bulk", { method: "POST", body: form });
+                const payload = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    const detail = (payload && (payload.detail || payload.message)) || `Delete failed (${r.status})`;
+                    throw new Error(detail);
+                }
+                libState.selectedStored.clear();
+                await openFolder(folder);
+                await loadFolders();
+                const skipped = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+                setFolderBulkStatus(`Deleted ${payload.deleted_count || 0} item(s).${skipped ? ` Skipped ${skipped}.` : ""}`);
+            } catch (e) {
+                setFolderBulkStatus(e.message || "Bulk delete failed.", { error: true });
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         }
 
         function fileExt(name) {
@@ -1262,6 +1484,54 @@
                 grid.innerHTML = `<div class="empty-state empty-state--error">Could not load library: ${e.message}</div>`;
             }
         }
+        async function deleteSelectedSearchMatches() {
+            const selected = libState.searchMatches.filter((m) => libState.selectedSearchKeys.has(matchKey(m)));
+            if (!selected.length) {
+                setSearchMoveStatus("Select one or more search results first.", { error: true });
+                return;
+            }
+            if (!confirm(`Delete ${selected.length} selected search result item(s)?`)) return;
+
+            const groups = new Map();
+            selected.forEach((m) => {
+                if (!groups.has(m.folder)) groups.set(m.folder, []);
+                groups.get(m.folder).push(m.stored_name);
+            });
+
+            const btn = $("#lib-search-delete-selected");
+            if (btn) btn.disabled = true;
+            setSearchMoveStatus(`Deleting ${selected.length} item(s)...`, { busy: true });
+
+            let deletedCount = 0;
+            let skippedCount = 0;
+            try {
+                for (const [folder, storedNames] of groups.entries()) {
+                    const form = new FormData();
+                    form.append("folder", folder);
+                    storedNames.forEach((name) => form.append("stored_names", name));
+
+                    const r = await fetch("/library/delete-bulk", { method: "POST", body: form });
+                    const payload = await r.json().catch(() => ({}));
+                    if (!r.ok) {
+                        const detail = (payload && (payload.detail || payload.message)) || `Delete failed (${r.status})`;
+                        throw new Error(detail);
+                    }
+                    deletedCount += Number(payload.deleted_count || 0);
+                    skippedCount += Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+                }
+
+                const deletedKeys = new Set(selected.map((m) => matchKey(m)));
+                libState.searchMatches = libState.searchMatches.filter((m) => !deletedKeys.has(matchKey(m)));
+                libState.selectedSearchKeys.clear();
+                renderLibrarySearch({ matches: libState.searchMatches });
+                await loadFolders();
+                setSearchMoveStatus(`Deleted ${deletedCount} item(s).${skippedCount ? ` Skipped ${skippedCount}.` : ""}`);
+            } catch (e) {
+                setSearchMoveStatus(e.message || "Failed to delete selected search results.", { error: true });
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
 
         async function openFolder(folder, opts = {}) {
             const section = $("#folder-detail");
@@ -1284,7 +1554,13 @@
             section.hidden = false;
             section.scrollIntoView({ behavior: "smooth", block: "start" });
             title.textContent = folder;
-            sub.textContent = `${payload.total} items · sorted by ${sort}${kind ? ` · ${kind}` : ""}`;
+            if (libState.currentFolder !== folder) {
+                libState.selectedStored.clear();
+            }
+            libState.currentFolder = folder;
+            sub.dataset.base = `${payload.total} items · sorted by ${sort}${kind ? ` · ${kind}` : ""}`;
+            refreshFolderSubtitle();
+            setFolderBulkStatus("");
 
             if (!payload.items.length) {
                 items.innerHTML = `<div class="empty-state">Folder is empty.</div>`;
@@ -1293,8 +1569,12 @@
 
             items.innerHTML = payload.items.map((it) => {
                 const tags = (it.tags || []).map((t) => `<span class="tag-pill">${t}</span>`).join("");
+                const checked = libState.selectedStored.has(it.stored_name) ? "checked" : "";
                 return `
                 <article class="library-item" data-stored="${it.stored_name}" data-kind="${it.kind || "other"}" data-display="${(it.display_name || it.stored_name)}">
+                    <label class="library-item__check" title="Select item">
+                        <input type="checkbox" data-action="select" ${checked} />
+                    </label>
                     <div class="library-item__icon">${kindBadge(it.kind)}</div>
                     <div class="library-item__body">
                         <h4 class="library-item__name">${it.display_name}</h4>
@@ -1317,9 +1597,20 @@
 
             items.querySelectorAll(".library-item").forEach((row) => {
                 const stored = row.dataset.stored;
+                const selectCb = row.querySelector('[data-action="select"]');
+                if (selectCb) {
+                    row.classList.toggle("is-selected", !!selectCb.checked);
+                    selectCb.addEventListener("change", () => {
+                        if (selectCb.checked) libState.selectedStored.add(stored);
+                        else libState.selectedStored.delete(stored);
+                        row.classList.toggle("is-selected", !!selectCb.checked);
+                        refreshFolderSubtitle();
+                    });
+                }
                 row.querySelector('[data-action="delete"]').addEventListener("click", async () => {
                     if (!confirm(`Delete "${stored}"?`)) return;
                     await fetch(`/library/${encodeURIComponent(folder)}/file/${encodeURIComponent(stored)}`, { method: "DELETE" });
+                    libState.selectedStored.delete(stored);
                     openFolder(folder);
                     loadFolders();
                 });
@@ -1341,6 +1632,8 @@
                     await renderLibraryPreview(folder, meta);
                 });
             });
+
+            refreshFolderSubtitle();
         }
 
         function refreshLibMeta() {
@@ -1494,7 +1787,10 @@
                 const r = await fetch("/library/search", { method: "POST", body: form });
                 if (!r.ok) throw new Error(`Search failed (${r.status})`);
                 const payload = await r.json();
+                libState.searchMatches = payload.matches || [];
+                libState.selectedSearchKeys = new Set(libState.searchMatches.map((m) => matchKey(m)));
                 renderLibrarySearch(payload);
+                setSearchMoveStatus("");
                 setStatus("#lib-search-status", `${payload.total_matches} match(es) across ${payload.folders_searched.length} folder(s).`);
             } catch (e) {
                 setStatus("#lib-search-status", e.message || "Search failed.", { error: true });
@@ -1507,12 +1803,17 @@
             const root = $("#lib-search-results");
             if (!root) return;
             if (!payload.matches || !payload.matches.length) {
+                libState.searchMatches = [];
+                libState.selectedSearchKeys.clear();
                 root.innerHTML = `<div class="empty-state">No matches.</div>`;
                 return;
             }
             root.innerHTML = payload.matches.map((m) => `
                 <article class="search-item">
                     <div class="search-item__meta">
+                        <label class="library-item__check" title="Select result">
+                            <input type="checkbox" data-action="select-search" data-key="${m.folder}::${m.stored_name}" ${libState.selectedSearchKeys.has(matchKey(m)) ? "checked" : ""} />
+                        </label>
                         ${kindBadge(m.kind)}
                         <span class="search-pill">${m.folder}</span>
                         <span class="search-score">score ${m.score}</span>
@@ -1527,6 +1828,14 @@
 
             root.querySelectorAll('[data-action="reveal"]').forEach((b) => {
                 b.addEventListener("click", () => openFolder(b.dataset.folder));
+            });
+            root.querySelectorAll('input[data-action="select-search"]').forEach((cb) => {
+                cb.addEventListener("change", () => {
+                    const key = cb.getAttribute("data-key");
+                    if (!key) return;
+                    if (cb.checked) libState.selectedSearchKeys.add(key);
+                    else libState.selectedSearchKeys.delete(key);
+                });
             });
         }
 
@@ -1583,11 +1892,38 @@
         const searchBtn = $("#lib-search-btn");
         if (searchBtn) searchBtn.addEventListener("click", searchLibrary);
 
+        const searchSelectAll = $("#lib-search-select-all");
+        if (searchSelectAll) searchSelectAll.addEventListener("click", () => setAllSearchSelections(true));
+
+        const searchSelectNone = $("#lib-search-select-none");
+        if (searchSelectNone) searchSelectNone.addEventListener("click", () => setAllSearchSelections(false));
+
+        const searchMoveSelected = $("#lib-search-move-selected");
+        if (searchMoveSelected) searchMoveSelected.addEventListener("click", moveSelectedSearchMatches);
+
+        const searchDeleteSelected = $("#lib-search-delete-selected");
+        if (searchDeleteSelected) searchDeleteSelected.addEventListener("click", deleteSelectedSearchMatches);
+
         const folderClose = $("#folder-close");
         if (folderClose) folderClose.addEventListener("click", () => {
             const sect = $("#folder-detail");
             if (sect) sect.hidden = true;
+            libState.currentFolder = "";
+            libState.selectedStored.clear();
+            setFolderBulkStatus("");
         });
+
+        const folderSelectAll = $("#folder-select-all");
+        if (folderSelectAll) folderSelectAll.addEventListener("click", () => setVisibleSelection(true));
+
+        const folderSelectNone = $("#folder-select-none");
+        if (folderSelectNone) folderSelectNone.addEventListener("click", () => setVisibleSelection(false));
+
+        const folderMoveSelected = $("#folder-move-selected");
+        if (folderMoveSelected) folderMoveSelected.addEventListener("click", moveSelectedItems);
+
+        const folderDeleteSelected = $("#folder-delete-selected");
+        if (folderDeleteSelected) folderDeleteSelected.addEventListener("click", deleteSelectedItems);
 
         const previewClose = $("#folder-preview-close");
         if (previewClose) previewClose.addEventListener("click", () => {
