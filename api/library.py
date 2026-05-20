@@ -46,9 +46,24 @@ def _safe(name: str, fallback: str = "item") -> str:
     return name[:120]
 
 
+def _safe_folder(folder: str, fallback: str = "default") -> str:
+    raw_parts = re.split(r"[\\/]+", (folder or "").strip())
+    parts = []
+    for part in raw_parts:
+        if not part:
+            continue
+        safe_part = _safe(part, "folder")
+        if safe_part in {".", ".."}:
+            continue
+        parts.append(safe_part)
+    if not parts:
+        return fallback
+    return "/".join(parts)
+
+
 def _folder_path(folder: str) -> Path:
-    f = _safe(folder, "default")
-    p = LIBRARY_ROOT / f
+    f = _safe_folder(folder, "default")
+    p = LIBRARY_ROOT.joinpath(*f.split("/"))
     # Defense-in-depth: never escape root.
     try:
         p.resolve().relative_to(LIBRARY_ROOT.resolve())
@@ -301,23 +316,51 @@ def _extract_zip_to_library(folder: str, zip_upload: UploadFile, tags: List[str]
 @router.get("")
 def list_folders() -> JSONResponse:
     folders = []
-    for d in sorted(LIBRARY_ROOT.iterdir()) if LIBRARY_ROOT.exists() else []:
+    for d in sorted(LIBRARY_ROOT.rglob("*")) if LIBRARY_ROOT.exists() else []:
         if not d.is_dir():
             continue
-        meta = _load_meta(d.name)
+        rel = d.relative_to(LIBRARY_ROOT).as_posix()
+        if not rel:
+            continue
+
+        has_meta = (d / "_meta.json").exists()
+        has_files = any(f.is_file() and f.name != "_meta.json" for f in d.glob("*"))
+        has_subdirs = any(sd.is_dir() for sd in d.glob("*"))
+        if not (has_meta or has_files or has_subdirs):
+            continue
+
+        meta = _load_meta(rel)
         items = meta.get("items", {})
+        if not items and has_files:
+            files = [f for f in d.glob("*") if f.is_file() and f.name != "_meta.json"]
+            item_count = len(files)
+            total_size = sum(f.stat().st_size for f in files)
+            kinds = sorted({_ext_kind(f.name) for f in files})
+        else:
+            item_count = len(items)
+            total_size = sum(i.get("size", 0) for i in items.values())
+            kinds = sorted({i.get("kind", "other") for i in items.values()})
+
+        parent = str(Path(rel).parent).replace("\\", "/")
+        if parent == ".":
+            parent = ""
+
         folders.append({
-            "folder": d.name,
-            "item_count": len(items),
-            "total_size": sum(i.get("size", 0) for i in items.values()),
-            "kinds": sorted({i.get("kind", "other") for i in items.values()}),
+            "folder": rel,
+            "name": Path(rel).name,
+            "parent": parent,
+            "level": max(0, len(Path(rel).parts) - 1),
+            "item_count": item_count,
+            "total_size": total_size,
+            "kinds": kinds,
         })
+    folders.sort(key=lambda f: f.get("folder", ""))
     return JSONResponse({"folders": folders, "root": str(LIBRARY_ROOT)})
 
 
 @router.post("/folder")
 def create_folder(name: str = Form(...)) -> JSONResponse:
-    folder = _safe(name, "folder")
+    folder = _safe_folder(name, "folder")
     fp = _folder_path(folder)
     fp.mkdir(parents=True, exist_ok=True)
     if not _meta_path(folder).exists():
@@ -325,12 +368,53 @@ def create_folder(name: str = Form(...)) -> JSONResponse:
     return JSONResponse({"folder": folder, "created": True})
 
 
-@router.delete("/folder/{folder}")
+@router.delete("/folder/{folder:path}")
 def delete_folder(folder: str) -> JSONResponse:
     fp = _folder_path(folder)
     if fp.exists():
         shutil.rmtree(fp)
     return JSONResponse({"folder": folder, "deleted": True})
+
+
+@router.post("/folder/move")
+def move_folder(
+    source_folder: str = Form(...),
+    target_parent: str = Form(""),
+) -> JSONResponse:
+    src_rel = _safe_folder(source_folder, "")
+    if not src_rel:
+        raise HTTPException(400, "source_folder is required")
+
+    src_path = _folder_path(src_rel)
+    if not src_path.exists() or not src_path.is_dir():
+        raise HTTPException(404, f"Source folder not found: {src_rel}")
+
+    parent_rel = _safe_folder(target_parent, "") if (target_parent or "").strip() else ""
+    parent_path = LIBRARY_ROOT if not parent_rel else _folder_path(parent_rel)
+    parent_path.mkdir(parents=True, exist_ok=True)
+
+    if src_path.resolve() == parent_path.resolve() or parent_path.resolve().is_relative_to(src_path.resolve()):
+        raise HTTPException(400, "Invalid target parent")
+
+    base_name = src_path.name
+    target_path = parent_path / base_name
+    if target_path.exists():
+        target_path = parent_path / f"{base_name}_{int(time.time() * 1000)}"
+
+    shutil.move(str(src_path), str(target_path))
+
+    # Update folder fields in all nested meta files after move.
+    for meta_file in target_path.rglob("_meta.json"):
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        rel_folder = meta_file.parent.relative_to(LIBRARY_ROOT).as_posix()
+        data["folder"] = rel_folder
+        meta_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    new_rel = target_path.relative_to(LIBRARY_ROOT).as_posix()
+    return JSONResponse({"source_folder": src_rel, "target_folder": new_rel, "moved": True})
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +487,7 @@ async def save_bulk_items(
     )
 
 
-@router.get("/{folder}")
+@router.get("/{folder:path}")
 def list_items(
     folder: str,
     sort: str = Query("created", description="name | created | size | kind"),
@@ -423,7 +507,7 @@ def list_items(
     return JSONResponse({"folder": folder, "total": len(items), "items": items})
 
 
-@router.get("/{folder}/file/{stored_name}")
+@router.get("/{folder:path}/file/{stored_name}")
 def download_item(folder: str, stored_name: str) -> FileResponse:
     stored_name = _safe(stored_name, "item")
     fp = _folder_path(folder) / stored_name
@@ -432,7 +516,7 @@ def download_item(folder: str, stored_name: str) -> FileResponse:
     return FileResponse(path=fp, filename=stored_name)
 
 
-@router.delete("/{folder}/file/{stored_name}")
+@router.delete("/{folder:path}/file/{stored_name}")
 def delete_item(folder: str, stored_name: str) -> JSONResponse:
     stored_name = _safe(stored_name, "item")
     fp = _folder_path(folder) / stored_name
@@ -449,7 +533,7 @@ def delete_bulk_items(
     folder: str = Form(...),
     stored_names: List[str] = Form(...),
 ) -> JSONResponse:
-    fld = _safe(folder, "default")
+    fld = _safe_folder(folder, "default")
     fp = _folder_path(fld)
     if not fp.exists():
         raise HTTPException(404, f"Folder not found: {fld}")
@@ -488,7 +572,7 @@ def delete_bulk_items(
     )
 
 
-@router.post("/{folder}/rename")
+@router.post("/{folder:path}/rename")
 def rename_item(
     folder: str,
     stored_name: str = Form(...),
@@ -679,7 +763,7 @@ async def search_library(
     })
 
 
-@router.post("/{folder}/export")
+@router.post("/{folder:path}/export")
 def export_folder(folder: str) -> FileResponse:
     fp = _folder_path(folder)
     if not fp.exists():

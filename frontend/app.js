@@ -1130,6 +1130,7 @@
             selectedStored: new Set(),
             searchMatches: [],
             selectedSearchKeys: new Set(),
+            selectedFolders: new Set(),
         };
 
         function setStatus(sel, msg, { busy = false, error = false } = {}) {
@@ -1178,6 +1179,19 @@
             el.classList.toggle("is-error", error);
         }
 
+        function setFolderMoveStatus(msg, { busy = false, error = false } = {}) {
+            const el = $("#library-folder-move-status");
+            if (!el) return;
+            if (!msg) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.textContent = msg;
+            el.classList.toggle("is-busy", busy);
+            el.classList.toggle("is-error", error);
+        }
+
         function matchKey(match) {
             return `${match.folder}::${match.stored_name}`;
         }
@@ -1189,6 +1203,68 @@
                 libState.selectedSearchKeys.clear();
             }
             renderLibrarySearch({ matches: libState.searchMatches });
+        }
+
+        function setAllFolderSelections(checked) {
+            const cards = grid ? Array.from(grid.querySelectorAll(".folder-card")) : [];
+            if (checked) {
+                cards.forEach((card) => {
+                    const folder = card.dataset.folder;
+                    if (!folder) return;
+                    libState.selectedFolders.add(folder);
+                    card.classList.add("is-selected");
+                    const cb = card.querySelector('input[data-action="select-folder"]');
+                    if (cb) cb.checked = true;
+                });
+            } else {
+                libState.selectedFolders.clear();
+                cards.forEach((card) => {
+                    card.classList.remove("is-selected");
+                    const cb = card.querySelector('input[data-action="select-folder"]');
+                    if (cb) cb.checked = false;
+                });
+            }
+        }
+
+        async function moveSelectedFolders() {
+            const selectedFolders = Array.from(libState.selectedFolders);
+            if (!selectedFolders.length) {
+                setFolderMoveStatus("Select one or more folders first.", { error: true });
+                return;
+            }
+
+            const targetInput = $("#folder-group-target");
+            const targetParent = (targetInput && targetInput.value.trim()) || "";
+            const btn = $("#folder-move-selected-folders");
+            if (btn) btn.disabled = true;
+            setFolderMoveStatus(`Moving ${selectedFolders.length} folder(s)...`, { busy: true });
+
+            let moved = 0;
+            let skipped = 0;
+            try {
+                for (const sourceFolder of selectedFolders) {
+                    const form = new FormData();
+                    form.append("source_folder", sourceFolder);
+                    form.append("target_parent", targetParent);
+
+                    const res = await fetch("/library/folder/move", { method: "POST", body: form });
+                    const payload = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        skipped += 1;
+                        continue;
+                    }
+                    if (payload && payload.moved) moved += 1;
+                }
+
+                libState.selectedFolders.clear();
+                await loadFolders();
+                const parentLabel = targetParent || "root";
+                setFolderMoveStatus(`Moved ${moved} folder(s) into ${parentLabel}.${skipped ? ` Skipped ${skipped}.` : ""}`);
+            } catch (e) {
+                setFolderMoveStatus(e.message || "Failed to move selected folders.", { error: true });
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         }
 
         async function moveSelectedSearchMatches() {
@@ -1431,6 +1507,11 @@
         function renderFolders(payload) {
             if (!grid) return;
             const folders = payload.folders || [];
+            const existing = new Set(folders.map((f) => f.folder));
+            libState.selectedFolders.forEach((f) => {
+                if (!existing.has(f)) libState.selectedFolders.delete(f);
+            });
+
             if (!folders.length) {
                 grid.innerHTML = `<div class="empty-state">No folders yet. Create one above or save a file.</div>`;
                 return;
@@ -1438,12 +1519,18 @@
             grid.innerHTML = folders.map((f) => `
                 <article class="folder-card" data-folder="${f.folder}">
                     <header class="folder-card__head">
+                        <label class="folder-card__select" title="Select folder">
+                            <input type="checkbox" data-action="select-folder" data-folder="${f.folder}" ${libState.selectedFolders.has(f.folder) ? "checked" : ""} />
+                        </label>
                         <div class="folder-card__icon" aria-hidden="true">
                             <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
                             </svg>
                         </div>
-                        <h3 class="folder-card__name">${f.folder}</h3>
+                        <div>
+                            <h3 class="folder-card__name">${f.name || f.folder}</h3>
+                            <div class="folder-card__path">${f.folder}</div>
+                        </div>
                     </header>
                     <div class="folder-card__meta">
                         <span>${f.item_count} items</span>
@@ -1452,24 +1539,71 @@
                     <div class="folder-card__kinds">${(f.kinds || []).map((k) => kindBadge(k)).join("")}</div>
                     <div class="folder-card__actions">
                         <button class="btn btn--ghost btn--small" data-action="open" data-folder="${f.folder}" type="button">Open</button>
+                        <button class="btn btn--ghost btn--small" data-action="group" data-folder="${f.folder}" type="button">Group</button>
                         <button class="btn btn--ghost btn--small" data-action="delete" data-folder="${f.folder}" type="button">Delete</button>
                     </div>
                 </article>`).join("");
+
+            grid.querySelectorAll(".folder-card").forEach((card) => {
+                const folder = card.dataset.folder;
+                if (folder && libState.selectedFolders.has(folder)) {
+                    card.classList.add("is-selected");
+                }
+            });
 
             grid.querySelectorAll("button[data-action]").forEach((btn) => {
                 btn.addEventListener("click", async (e) => {
                     e.stopPropagation();
                     const folder = btn.dataset.folder;
                     if (btn.dataset.action === "open") openFolder(folder);
+                    else if (btn.dataset.action === "group") {
+                        const parentInput = $("#folder-group-target");
+                        let targetParent = (parentInput && parentInput.value.trim()) || "";
+                        if (!targetParent) {
+                            const prompted = prompt("Move folder into parent folder (leave empty for root):", "");
+                            if (prompted === null) return;
+                            targetParent = prompted.trim();
+                        }
+                        const form = new FormData();
+                        form.append("source_folder", folder);
+                        form.append("target_parent", targetParent);
+                        const res = await fetch("/library/folder/move", { method: "POST", body: form });
+                        if (!res.ok) {
+                            const payload = await res.json().catch(() => ({}));
+                            throw new Error(payload.detail || `Move folder failed (${res.status})`);
+                        }
+                        setFolderMoveStatus("Folder moved successfully.");
+                        loadFolders();
+                    }
                     else if (btn.dataset.action === "delete") {
                         if (!confirm(`Delete folder "${folder}" and all its items?`)) return;
                         await fetch(`/library/folder/${encodeURIComponent(folder)}`, { method: "DELETE" });
+                        libState.selectedFolders.delete(folder);
                         loadFolders();
                     }
                 });
             });
+            grid.querySelectorAll('input[data-action="select-folder"]').forEach((cb) => {
+                cb.addEventListener("click", (e) => e.stopPropagation());
+                cb.addEventListener("change", (e) => {
+                    e.stopPropagation();
+                    const folder = cb.getAttribute("data-folder");
+                    if (!folder) return;
+                    if (cb.checked) {
+                        libState.selectedFolders.add(folder);
+                        cb.closest(".folder-card")?.classList.add("is-selected");
+                    } else {
+                        libState.selectedFolders.delete(folder);
+                        cb.closest(".folder-card")?.classList.remove("is-selected");
+                    }
+                });
+            });
             grid.querySelectorAll(".folder-card").forEach((card) => {
-                card.addEventListener("click", () => openFolder(card.dataset.folder));
+                card.addEventListener("click", (e) => {
+                    if (e.target && e.target.closest(".folder-card__actions")) return;
+                    if (e.target && e.target.closest(".folder-card__select")) return;
+                    openFolder(card.dataset.folder);
+                });
             });
         }
 
@@ -1877,17 +2011,28 @@
         if (createFolderBtn) {
             createFolderBtn.addEventListener("click", async () => {
                 const name = ($("#new-folder-name") && $("#new-folder-name").value.trim()) || "";
+                const parent = ($("#new-folder-parent") && $("#new-folder-parent").value.trim()) || "";
                 if (!name) return;
                 const form = new FormData();
-                form.append("name", name);
+                form.append("name", parent ? `${parent}/${name}` : name);
                 await fetch("/library/folder", { method: "POST", body: form });
                 $("#new-folder-name").value = "";
+                if ($("#new-folder-parent")) $("#new-folder-parent").value = "";
                 loadFolders();
             });
         }
 
         const refreshBtn = $("#refresh-library");
         if (refreshBtn) refreshBtn.addEventListener("click", loadFolders);
+
+        const folderCardsSelectAll = $("#folder-cards-select-all");
+        if (folderCardsSelectAll) folderCardsSelectAll.addEventListener("click", () => setAllFolderSelections(true));
+
+        const folderCardsSelectNone = $("#folder-cards-select-none");
+        if (folderCardsSelectNone) folderCardsSelectNone.addEventListener("click", () => setAllFolderSelections(false));
+
+        const folderMoveSelectedFolders = $("#folder-move-selected-folders");
+        if (folderMoveSelectedFolders) folderMoveSelectedFolders.addEventListener("click", moveSelectedFolders);
 
         const searchBtn = $("#lib-search-btn");
         if (searchBtn) searchBtn.addEventListener("click", searchLibrary);
@@ -1924,6 +2069,29 @@
 
         const folderDeleteSelected = $("#folder-delete-selected");
         if (folderDeleteSelected) folderDeleteSelected.addEventListener("click", deleteSelectedItems);
+
+        const folderCreateSub = $("#folder-create-sub");
+        if (folderCreateSub) {
+            folderCreateSub.addEventListener("click", async () => {
+                const current = (libState.currentFolder || "").trim();
+                if (!current) {
+                    setFolderBulkStatus("Open a folder first.", { error: true });
+                    return;
+                }
+                const subName = prompt("Subfolder name:", "");
+                if (!subName) return;
+                const form = new FormData();
+                form.append("name", `${current}/${subName.trim()}`);
+                const r = await fetch("/library/folder", { method: "POST", body: form });
+                if (!r.ok) {
+                    const payload = await r.json().catch(() => ({}));
+                    setFolderBulkStatus(payload.detail || `Create subfolder failed (${r.status})`, { error: true });
+                    return;
+                }
+                setFolderBulkStatus(`Subfolder created under ${current}.`);
+                await loadFolders();
+            });
+        }
 
         const previewClose = $("#folder-preview-close");
         if (previewClose) previewClose.addEventListener("click", () => {

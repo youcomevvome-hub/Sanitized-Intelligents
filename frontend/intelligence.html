@@ -64,11 +64,17 @@
                 </div>
                 <div class="section-actions">
                     <input id="new-folder-name" class="text-input text-input--inline" placeholder="New folder name" />
+                    <input id="new-folder-parent" class="text-input text-input--inline" placeholder="Parent folder (optional)" />
+                    <input id="folder-group-target" class="text-input text-input--inline" placeholder="Move selected folders to parent (empty = root)" />
+                    <button id="folder-cards-select-all" class="btn btn--ghost" type="button">Select folders</button>
+                    <button id="folder-cards-select-none" class="btn btn--ghost" type="button">Clear folders</button>
+                    <button id="folder-move-selected-folders" class="btn btn--primary" type="button">Move selected folders</button>
                     <button id="create-folder-btn" class="btn btn--ghost" type="button">Create folder</button>
                     <button id="refresh-library" class="btn btn--ghost" type="button">Refresh</button>
                 </div>
             </div>
             <div id="folders-grid" class="folders-grid"></div>
+            <div id="library-folder-move-status" class="status" hidden></div>
         </div>
     </section>
 
@@ -185,6 +191,7 @@
                         <button id="folder-select-none" class="btn btn--ghost" type="button">Clear</button>
                         <button id="folder-move-selected" class="btn btn--primary" type="button">Move selected</button>
                         <button id="folder-delete-selected" class="btn btn--ghost" type="button">Delete selected</button>
+                        <button id="folder-create-sub" class="btn btn--ghost" type="button">Create subfolder</button>
                         <button id="folder-export" class="btn btn--ghost" type="button">Export ZIP</button>
                         <button id="folder-close" class="btn btn--ghost" type="button">Close</button>
                     </div>
@@ -226,6 +233,6 @@
     </footer>
 
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
-    <script src="/static/app.js?v=20260514c"></script>
+    <script src="/static/app.js?v=20260515a"></script>
 </body>
 </html>

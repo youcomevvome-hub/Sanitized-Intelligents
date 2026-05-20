@@ -1801,12 +1801,26 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     box-shadow: 0 4px 14px -10px rgba(18, 52, 38, 0.25);
 }
+.folder-card.is-selected {
+    border-color: rgba(45, 122, 85, 0.62);
+    box-shadow: 0 14px 24px -18px rgba(18, 52, 38, 0.5);
+}
 .folder-card:hover {
     transform: translateY(-3px);
     border-color: rgba(45, 122, 85, 0.35);
     box-shadow: 0 18px 28px -18px rgba(18, 52, 38, 0.4);
 }
 .folder-card__head { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.folder-card__select {
+    display: inline-flex;
+    align-items: center;
+}
+.folder-card__select input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--green-700);
+    cursor: pointer;
+}
 .folder-card__icon {
     width: 42px; height: 42px;
     border-radius: 12px;
@@ -1815,6 +1829,12 @@ html[data-theme="dark"] body.page-docs .text-input { background: rgba(255, 255, 
     color: var(--green-800);
 }
 .folder-card__name { font-size: 16px; font-weight: 700; color: var(--green-900); margin: 0; word-break: break-all; }
+.folder-card__path {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--ink-700);
+    word-break: break-all;
+}
 .folder-card__meta {
     display: flex; justify-content: space-between;
     font-size: 12px; color: var(--ink-700);
